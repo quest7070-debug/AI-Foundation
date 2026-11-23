@@ -1,0 +1,25 @@
+name: LibreChat v0.8.8 E2E Gate
+on:
+  workflow_dispatch:
+jobs:
+  gate:
+    runs-on: [self-hosted, macOS, ARM64]
+    steps:
+      - name: Run isolated official mock E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/librechat-v088-e2e
+          export E2E_BASE_URL=http://127.0.0.1:3333
+          test "$(node -p "require('./node_modules/@playwright/test/package.json').version")" = "1.62.1"
+          npm run e2e:prepare
+          ./node_modules/.bin/playwright install chromium
+          ./node_modules/.bin/playwright test --config=e2e/playwright.config.mock.ts agent-file-ownership.spec.ts
+      - name: Run authenticated isolated v0.8.8 browser E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/librechat-v088-e2e
+          export E2E_BASE_URL=http://127.0.0.1:3334
+          export E2E_AUTH_TIMEOUT=30000
+          ./node_modules/.bin/playwright test --config=e2e/playwright.config.ts landing.spec.ts --workers=1

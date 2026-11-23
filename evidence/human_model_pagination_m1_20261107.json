@@ -1,0 +1,47 @@
+{
+  "status": "SOURCE_ACCEPTED_NOT_DEPLOYED",
+  "pr": 274,
+  "parent_pr": 273,
+  "validated_head": "8141070e6b0fe5db91f1f7535a5372f949772a94",
+  "source_file": "src/ai_foundation/human_model_context.py",
+  "source_git_blob": "9fbc9405a051de1fb553f3f46ab54980418620f5",
+  "test_file": "tests/test_human_model_pagination_revision.py",
+  "test_git_blob": "d92787d33e4573ef7d19d56396fd19a16d268ef8",
+  "baseline": {
+    "failed": 5,
+    "passed": 2,
+    "source": "unaltered PR #273 HEAD 5a748d8b26ab15e8e43bd2898ee967d000eb3b6f"
+  },
+  "m1_focused": {
+    "success": 14,
+    "subtests_success": 7,
+    "seconds": 0.08,
+    "model_calls": 0
+  },
+  "github_actions": {
+    "run_id": 42342891869,
+    "conclusion": "success",
+    "passed": 1638,
+    "skipped": 15,
+    "subtests_passed": 7,
+    "warnings": 1
+  },
+  "new_behaviors": [
+    "denies unpinned second page",
+    "denies out of order continuation",
+    "denies revision drift across pages",
+    "clears anchor after failure or restarted first page",
+    "preserves independent scope anchors and existing Guard privacy checks"
+  ],
+  "state": {
+    "deployment": false,
+    "live_chat_acceptance": false,
+    "main_merge": false,
+    "native_signals": 0,
+    "paid_calls": 0
+  },
+  "limits": [
+    "request-local context only",
+    "source view revision is not a complete cryptographic view-level digest"
+  ]
+}

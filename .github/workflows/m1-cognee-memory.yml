@@ -1,0 +1,50 @@
+name: M1 Cognee grounded memory acceptance
+on:
+  push:
+    branches: [experiment/cognee-m1-acceptance-20261103]
+    paths:
+      - experiments/human_model/cognee_memory.py
+      - experiments/human_model/cognee_bridge.py
+      - experiments/human_model/cognee_software_runtime.py
+      - scripts/m1_cognee_async_canary.py
+      - scripts/cognee_snapshot_worker.py
+      - scripts/m1_cognee_memory_acceptance.py
+      - .github/workflows/m1-cognee-memory.yml
+  workflow_dispatch:
+    inputs:
+      canonical_input:
+        description: Explicitly test local-general only when its model is installed
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: cognee-memory-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  local-cognee:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.user.login == 'quest7070-debug')
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Existing external volume, isolated OSS install, local model and grounded graph readback
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONPATH: src
+          CANONICAL_INPUT: ${{ inputs.canonical_input || false }}
+        run: |
+          set -euo pipefail
+          probe_args=()
+          if [[ "$CANONICAL_INPUT" == "true" ]]; then probe_args+=(--canonical-input); fi
+          for candidate in /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3; do
+            if [[ -x "$candidate" ]] && "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,12) else 1)'; then
+              "$candidate" -B scripts/m1_cognee_memory_acceptance.py "${probe_args[@]}"
+              exit 0
+            fi
+          done
+          exit 2

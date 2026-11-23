@@ -1,0 +1,85 @@
+name: Foundation M1 development bridge (read-only)
+
+# A new, owner-authored Issue is the request transport. Never run issue text as
+# code or checkout an untrusted branch. Desktop Commander is not involved.
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: foundation-m1-bridge-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  bridge:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      (github.event.issue.title == 'Foundation M1 Bridge: snapshot' ||
+       github.event.issue.title == 'Foundation M1 Bridge: selftest' ||
+       github.event.issue.title == 'Foundation M1 Bridge: triage' ||
+       github.event.issue.title == 'Foundation M1 Bridge: klm-status' ||
+       github.event.issue.title == 'Foundation M1 Bridge: runtime-status' ||
+       github.event.issue.title == 'Foundation M1 Bridge: source-status' ||
+       github.event.issue.title == 'Foundation M1 Bridge: operator-status' ||
+       github.event.issue.title == 'Foundation M1 Bridge: storage-status' ||
+       github.event.issue.title == 'Foundation M1 Bridge: rollout-readiness' ||
+       github.event.issue.title == 'Foundation M1 Bridge: owner-count' ||
+       github.event.issue.title == 'Foundation M1 Bridge: release-inventory' ||
+       github.event.issue.title == 'Foundation M1 Bridge: strata-status' ||
+       github.event.issue.title == 'Foundation M1 Bridge: llama-swap-upgrade-audit' ||
+       github.event.issue.title == 'Foundation M1 Bridge: klm-live-readonly' ||
+       github.event.issue.title == 'Foundation M1 Bridge: mcp-stdio' ||
+       github.event.issue.title == 'Foundation M1 Bridge: tunnel-readiness')
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 4
+    # A persistent runner services unrelated PR/Issue jobs. Never execute a
+    # trusted-M1 receipt from its shared default checkout, which may be reset
+    # by another concurrent workflow after actions/checkout completed.
+    env:
+      M1_BRIDGE_ROOT: ${{ github.workspace }}/.m1-bridge/${{ github.run_id }}-${{ github.run_attempt }}
+    defaults:
+      run:
+        working-directory: .m1-bridge/${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout event-time trusted default-branch commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          path: .m1-bridge/${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+      - name: Strict validation, read-only M1 operation and Issue receipt
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: src:.
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          if [[ "$PWD" != "$M1_BRIDGE_ROOT" ||
+                ! -f scripts/m1_development_bridge.py ||
+                ! -f .github/workflows/m1-development-bridge.yml ||
+                "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+            echo "::error::BRIDGE_EVENT_SOURCE_DRIFT"
+            exit 1
+          fi
+          /opt/homebrew/bin/python3.12 -B scripts/m1_development_bridge.py
+      - name: Remove only the completed bridge's run-owned checkout
+        if: always()
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$GITHUB_WORKSPACE/.m1-bridge/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [[ "$M1_BRIDGE_ROOT" != "$expected" ||
+                -L "$GITHUB_WORKSPACE/.m1-bridge" || -L "$expected" ]]; then
+            echo "::error::BRIDGE_CLEANUP_SCOPE_UNVERIFIED"
+            exit 1
+          fi
+          if [[ -d "$expected" ]]; then
+            rm -rf -- "$expected"
+          fi
+

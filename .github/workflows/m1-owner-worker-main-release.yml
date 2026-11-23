@@ -1,0 +1,30 @@
+name: Foundation M1 owner main 9B worker release
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+  issues: read
+concurrency:
+  group: foundation-m1-worker-main-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      startsWith(github.event.issue.title, 'Foundation M1 Worker Release: ')
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Owner exact Issue Guard approval and idle-worker rollback cutover
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: src:.
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: /opt/homebrew/bin/python3.12 -B scripts/m1_github_owner_worker_release.py

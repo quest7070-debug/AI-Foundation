@@ -1,0 +1,48 @@
+{
+  "schema": "humanmodel-reference-integrity-m1/1",
+  "source_commit": "6efa13d10823ed60ce74e531c3041f19113cc69f",
+  "synthetic_only": true,
+  "production_changed": false,
+  "model_calls": 0,
+  "paid_calls": 0,
+  "deployed_context_sha256": "0f0996874709fc9f3b5e84eb7db7530e27d3faabe97a829d3ac96f78fbfde674",
+  "results": [
+    {
+      "variant": "baseline",
+      "exit_code": 1,
+      "tests_run": 5,
+      "failures": 10,
+      "context_sha256": "4a5c85c1b042a92978a735b3149791d0e4ec1e46bc323ccc645bebc06bb024bc",
+      "log_sha256": "dabede4bf5a70240d31213580004ce63f04250e087fe6d63eeedf99a36691afd"
+    },
+    {
+      "variant": "fixed",
+      "exit_code": 0,
+      "tests_run": 5,
+      "failures": 0,
+      "context_sha256": "1dc4899b8ac604e8b8858ad026b9bc9bb8b8684c55ca9c70f2673bfae3532283",
+      "log_sha256": "1909fa8cf8576f1a200f4d7765c284c77b471cc8f44fc812a1b9ef5552b4d0ac"
+    },
+    {
+      "variant": "deployed_before",
+      "exit_code": 1,
+      "tests_run": 5,
+      "failures": 10,
+      "context_sha256": "0f0996874709fc9f3b5e84eb7db7530e27d3faabe97a829d3ac96f78fbfde674",
+      "log_sha256": "dabede4bf5a70240d31213580004ce63f04250e087fe6d63eeedf99a36691afd"
+    },
+    {
+      "variant": "deployed_after",
+      "exit_code": 0,
+      "tests_run": 5,
+      "failures": 0,
+      "context_sha256": "94dde633e32591a7b4ffeafd5d0748bd9993117c10fde3a381b930a94f016dea",
+      "log_sha256": "1909fa8cf8576f1a200f4d7765c284c77b471cc8f44fc812a1b9ef5552b4d0ac"
+    }
+  ],
+  "legacy_adapter": {
+    "exit_code": 0,
+    "tests_run": 8,
+    "log_sha256": "be59d2943f917a3869dd0d06ea56b9315f0729cccad398feb12a9f8f7d023be3"
+  }
+}

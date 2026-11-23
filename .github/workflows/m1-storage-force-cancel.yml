@@ -1,0 +1,46 @@
+name: Force-stop legacy storage task if cancellation stalls
+
+on:
+  push:
+    branches: [ops/m1-external-ssd-audit-20261029]
+    paths:
+      - .github/workflows/m1-storage-force-cancel.yml
+
+permissions:
+  actions: write
+
+jobs:
+  force-stop-legacy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Force-cancel only the superseded long-running release job
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          run_id=40867136123
+          payload="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/$repo/actions/runs/$run_id")"
+          status="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])' <<< "$payload")"
+          if [[ "$status" == "queued" || "$status" == "in_progress" ]]; then
+            curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json"               "https://api.github.com/repos/$repo/actions/runs/$run_id/force-cancel" >/dev/null
+            echo "Force-cancel requested for superseded run $run_id."
+          else
+            echo "Superseded run $run_id already terminal: $status."
+          fi
+          python3 - <<'PY'
+          import json, os, time, urllib.request
+          repo=os.environ["GITHUB_REPOSITORY"];token=os.environ["GH_TOKEN"];run_id=40867136123
+          deadline=time.monotonic()+90
+          while True:
+              request=urllib.request.Request(f"https://api.github.com/repos/{repo}/actions/runs/{run_id}",
+                  headers={"Authorization":f"Bearer {token}","Accept":"application/vnd.github+json"})
+              with urllib.request.urlopen(request,timeout=15) as response:
+                  data=json.load(response)
+              print(json.dumps({"run_id":run_id,"status":data["status"],"conclusion":data["conclusion"]}),flush=True)
+              if data["status"]=="completed": break
+              if time.monotonic()>=deadline: raise SystemExit("Legacy run did not stop.")
+              time.sleep(2)
+          PY

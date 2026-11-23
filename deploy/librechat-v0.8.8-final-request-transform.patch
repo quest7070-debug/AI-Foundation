@@ -1,0 +1,28 @@
+diff --git a/packages/api/src/endpoints/openai/config.ts b/packages/api/src/endpoints/openai/config.ts
+index fba96de..c7d4b96 100644
+--- a/packages/api/src/endpoints/openai/config.ts
++++ b/packages/api/src/endpoints/openai/config.ts
+@@ -322,6 +322,10 @@ export function getOpenAIConfig(
+     }
+   }
+ 
++  if (options.finalRequestTransform != null) {
++    configOptions.fetch = options.finalRequestTransform as unknown as Fetch;
++  }
++
+   const result: t.OpenAIConfigResult = {
+     llmConfig,
+     configOptions,
+diff --git a/packages/api/src/types/openai.ts b/packages/api/src/types/openai.ts
+index 7c87667..437b4d1 100644
+--- a/packages/api/src/types/openai.ts
++++ b/packages/api/src/types/openai.ts
+@@ -30,6 +30,8 @@ export interface OpenAIConfigOptions {
+   addParams?: Record<string, unknown>;
+   dropParams?: string[];
+   customParams?: Partial<TConfig['customParams']>;
++  /** Trusted host callback that may transform the final serialized request. */
++  finalRequestTransform?: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+ }
+ 
+ export type OpenAIConfiguration = OpenAIClientOptions['configuration'];

@@ -1,0 +1,11 @@
+from ai_foundation.openai_local_adapter import LocalExecutionDispatcher
+
+def test_nonstring_bindings_are_not_implicit_authority():
+    default = object()
+    strata = object()
+    dispatcher = LocalExecutionDispatcher(
+        default, by_prefix=(("local:mainpc-strata", strata),))
+    for value in (None, False, 0, [], {}):
+        assert dispatcher.for_binding(value) is default
+    assert dispatcher.for_binding("local:mainpc-strata:code-agent") is strata
+    assert dispatcher.for_binding("local:mainpc-strata-unauthorized") is default

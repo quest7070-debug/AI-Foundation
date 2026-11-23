@@ -1,0 +1,355 @@
+diff --git a/packages/api/src/agents/initialize.ts b/packages/api/src/agents/initialize.ts
+index cd192e7..2323957 100644
+--- a/packages/api/src/agents/initialize.ts
++++ b/packages/api/src/agents/initialize.ts
+@@ -124,6 +124,7 @@ import { applyBackgroundToolCalls } from './background';
+ import { applyTurnDelivery } from './files/delivery';
+ import { generateArtifactsPrompt } from '~/prompts';
+ import { getProviderConfig } from '~/endpoints';
++import { createFoundationSigningContext } from '~/endpoints/custom/foundationContext';
+ import { primeResources } from './resources';
+ 
+ /**
+@@ -1309,11 +1310,18 @@ export async function initializeAgent(
+     model: agent.model,
+   };
+ 
++  const foundationSigning = createFoundationSigningContext(
++    provider,
++    agent.model,
++    requestFileOwnerId,
++  );
++
+   const options: InitializeResultBase = await getOptions({
+     runtime: {
+       appConfig,
+       user,
+       requestBody: runtime.requestBody,
++      foundationSigning,
+     },
+     endpoint: provider,
+     model_parameters: finalModelOptions,
+@@ -2467,6 +2475,11 @@ export async function initializeAgent(
+       ...(file._id == null ? {} : { _id: String(file._id) }),
+     }));
+ 
++  if (foundationSigning != null) {
++    foundationSigning.attachmentIds = currentRequestAttachments.map((file) => file.file_id);
++    foundationSigning.ready = true;
++  }
++
+   const compatibilityAttachments =
+     finalAttachments.length > 0
+       ? finalAttachments
+diff --git a/packages/api/src/endpoints/custom/foundationContext.ts b/packages/api/src/endpoints/custom/foundationContext.ts
+new file mode 100644
+index 0000000..653d942
+--- /dev/null
++++ b/packages/api/src/endpoints/custom/foundationContext.ts
+@@ -0,0 +1,47 @@
++import type { FoundationSigningContext } from '~/types';
++
++const FOUNDATION_MODES = {
++  'foundation-auto': ['CHAT', 'daily-default'],
++  'foundation-search': ['SEARCH', ''],
++  'foundation-code': ['CODE', 'repo-default'],
++  'foundation-data': ['DATA', 'json-summary'],
++  'foundation-files': ['FILES', 'files-default'],
++  'foundation-vision': ['VISION', ''],
++} as const;
++
++export function createFoundationAuxiliarySigningContext(
++  endpoint: string,
++  owner?: string,
++): FoundationSigningContext | undefined {
++  if (endpoint !== 'Foundation' || !owner) {
++    return undefined;
++  }
++  return {
++    owner,
++    attachmentIds: [],
++    capability: 'CHAT',
++    scope: '',
++    longRunning: false,
++    ready: true,
++  };
++}
++
++export function createFoundationSigningContext(
++  endpoint: string,
++  model: string,
++  owner?: string,
++): FoundationSigningContext | undefined {
++  if (endpoint !== 'Foundation' || !owner) {
++    return undefined;
++  }
++  const mode =
++    FOUNDATION_MODES[model as keyof typeof FOUNDATION_MODES] ?? FOUNDATION_MODES['foundation-auto'];
++  return {
++    owner,
++    attachmentIds: [],
++    capability: mode[0],
++    scope: mode[1],
++    longRunning: false,
++    ready: false,
++  };
++}
+diff --git a/packages/api/src/endpoints/custom/foundationSigning.spec.ts b/packages/api/src/endpoints/custom/foundationSigning.spec.ts
+new file mode 100644
+index 0000000..7dd2d01
+--- /dev/null
++++ b/packages/api/src/endpoints/custom/foundationSigning.spec.ts
+@@ -0,0 +1,80 @@
++import { createHash, createHmac } from 'node:crypto';
++import {
++  createFoundationAuxiliarySigningContext,
++  createFoundationSigningContext,
++} from './foundationContext';
++import { createFoundationFinalRequestTransform } from './foundationSigning';
++
++describe('Foundation final request signing', () => {
++  it('signs the exact final body and delegates to the selected transport', async () => {
++    const context = createFoundationSigningContext('Foundation', 'foundation-auto', 'user-a')!;
++    context.attachmentIds = ['file-a'];
++    context.ready = true;
++    const next = jest.fn(async (_url, init?: RequestInit) => {
++      const headers = new Headers(init?.headers);
++      return new Response(JSON.stringify(Object.fromEntries(headers.entries())));
++    });
++    const body = JSON.stringify({ model: 'foundation-auto', messages: [{ role: 'user', content: 'hi' }] });
++    const transform = createFoundationFinalRequestTransform(context, 'secret');
++    const response = await transform('http://foundation/v1/chat/completions', { body }, next);
++    const headers = JSON.parse(await response.text()) as Record<string, string>;
++
++    expect(next).toHaveBeenCalledTimes(1);
++    expect(headers['x-foundation-owner']).toBe('user-a');
++    expect(headers['x-foundation-attachments']).toBe('["file-a"]');
++    expect(headers['x-foundation-capability']).toBe('CHAT');
++    expect(headers['x-foundation-scope']).toBe('daily-default');
++    const digest = createHash('sha256').update(Buffer.from(body)).digest('hex');
++    const message = ['v2', 'user-a', '["file-a"]', 'CHAT', 'daily-default', '0',
++      headers['x-foundation-attachment-timestamp'], digest].join('\n');
++    expect(headers['x-foundation-attachment-signature']).toBe(
++      createHmac('sha256', 'secret').update(message).digest('hex'),
++    );
++  });
++
++  it('fails closed before standard attachment authority is finalized', async () => {
++    const context = createFoundationSigningContext('Foundation', 'foundation-auto', 'user-a')!;
++    const next = jest.fn();
++    await expect(
++      createFoundationFinalRequestTransform(context, 'secret')('http://foundation', { body: '{}' }, next),
++    ).rejects.toThrow('not ready');
++    expect(next).not.toHaveBeenCalled();
++  });
++
++  it('keeps concurrent request authority isolated', async () => {
++    const a = createFoundationSigningContext('Foundation', 'foundation-files', 'user-a')!;
++    const b = createFoundationSigningContext('Foundation', 'foundation-vision', 'user-b')!;
++    a.attachmentIds = ['a1'];
++    b.attachmentIds = ['b1'];
++    a.ready = true;
++    b.ready = true;
++    const capture = async (_url: string | URL | Request, init?: RequestInit) =>
++      new Response(JSON.stringify(Object.fromEntries(new Headers(init?.headers).entries())));
++    const [ra, rb] = await Promise.all([
++      createFoundationFinalRequestTransform(a, 'secret')('http://foundation', { body: '{"a":1}' }, capture),
++      createFoundationFinalRequestTransform(b, 'secret')('http://foundation', { body: '{"b":1}' }, capture),
++    ]);
++    const ha = JSON.parse(await ra.text()) as Record<string, string>;
++    const hb = JSON.parse(await rb.text()) as Record<string, string>;
++    expect([ha['x-foundation-owner'], ha['x-foundation-attachments'], ha['x-foundation-capability']])
++      .toEqual(['user-a', '["a1"]', 'FILES']);
++    expect([hb['x-foundation-owner'], hb['x-foundation-attachments'], hb['x-foundation-capability']])
++      .toEqual(['user-b', '["b1"]', 'VISION']);
++  });
++
++  it('fails auxiliary Foundation calls down to CHAT with no scope or attachments', () => {
++    const context = createFoundationAuxiliarySigningContext('Foundation', 'user-a')!;
++    expect(context).toEqual({
++      owner: 'user-a',
++      attachmentIds: [],
++      capability: 'CHAT',
++      scope: '',
++      longRunning: false,
++      ready: true,
++    });
++  });
++
++  it('does not create signing authority for non-Foundation endpoints', () => {
++    expect(createFoundationSigningContext('openAI', 'foundation-auto', 'user-a')).toBeUndefined();
++  });
++});
+diff --git a/packages/api/src/endpoints/custom/foundationSigning.ts b/packages/api/src/endpoints/custom/foundationSigning.ts
+new file mode 100644
+index 0000000..e0c5892
+--- /dev/null
++++ b/packages/api/src/endpoints/custom/foundationSigning.ts
+@@ -0,0 +1,68 @@
++import { createHash, createHmac } from 'node:crypto';
++import type { FoundationSigningContext } from '~/types';
++
++type NextFetch = (
++  url: string | URL | Request,
++  init?: RequestInit,
++) => Promise<Response>;
++
++function serializedBody(body: BodyInit | null | undefined): Buffer {
++  if (typeof body === 'string') {
++    return Buffer.from(body);
++  }
++  if (body instanceof Uint8Array) {
++    return Buffer.from(body);
++  }
++  throw new Error('Foundation signing requires a final serialized request body');
++}
++
++export function createFoundationFinalRequestTransform(
++  context: FoundationSigningContext,
++  secret: string,
++) {
++  return async (
++    url: string | URL | Request,
++    init: RequestInit | undefined,
++    next: NextFetch,
++  ): Promise<Response> => {
++    if (!context.ready || !context.owner || !secret) {
++      throw new Error('Foundation signing context is not ready');
++    }
++
++    const body = serializedBody(init?.body);
++    const timestamp = Math.floor(Date.now() / 1000).toString();
++    const attachmentIds = context.attachmentIds.filter((id) => id.length > 0);
++    const serializedIds = JSON.stringify(attachmentIds);
++    const digest = createHash('sha256').update(body).digest('hex');
++    const message = [
++      'v2',
++      context.owner,
++      serializedIds,
++      context.capability,
++      context.scope,
++      context.longRunning ? '1' : '0',
++      timestamp,
++      digest,
++    ].join('\n');
++    const signature = createHmac('sha256', secret).update(message).digest('hex');
++    const headers = new Headers(init?.headers ?? {});
++
++    headers.set('X-Foundation-Owner', context.owner);
++    headers.set('X-Foundation-Attachments', serializedIds);
++    headers.set('X-Foundation-Capability', context.capability);
++    if (context.scope) {
++      headers.set('X-Foundation-Scope', context.scope);
++    } else {
++      headers.delete('X-Foundation-Scope');
++    }
++    if (context.longRunning) {
++      headers.set('X-Foundation-Long-Running', '1');
++    } else {
++      headers.delete('X-Foundation-Long-Running');
++    }
++    headers.set('X-Foundation-Attachment-Timestamp', timestamp);
++    headers.set('X-Foundation-Attachment-Signature', signature);
++
++    return next(url, { ...init, headers });
++  };
++}
+diff --git a/packages/api/src/endpoints/custom/initialize.ts b/packages/api/src/endpoints/custom/initialize.ts
+index e254c95..e24b1d8 100644
+--- a/packages/api/src/endpoints/custom/initialize.ts
++++ b/packages/api/src/endpoints/custom/initialize.ts
+@@ -1,3 +1,4 @@
++import { readFileSync } from 'node:fs';
+ import { Providers } from '@librechat/agents';
+ import {
+   ErrorTypes,
+@@ -25,6 +26,8 @@ import { resolveEndpointRuntime } from '~/types';
+ import { fetchModels } from '~/endpoints/models';
+ import { validateEndpointURL } from '~/auth';
+ import { tokenConfigCache } from '~/cache';
++import { createFoundationFinalRequestTransform } from './foundationSigning';
++import { createFoundationAuxiliarySigningContext } from './foundationContext';
+ 
+ const { PROXY } = process.env;
+ 
+@@ -308,6 +311,17 @@ export async function initializeCustom(
+     !userProvidesURL,
+   );
+ 
++  if (endpoint === 'Foundation' && !userProvidesURL) {
++    const signing =
++      runtime.foundationSigning ?? createFoundationAuxiliarySigningContext(endpoint, userId);
++    const secretFile = process.env.FOUNDATION_ATTACHMENT_SECRET_FILE?.trim();
++    const secret = secretFile ? readFileSync(secretFile, 'utf8').trim() : '';
++    if (!signing || !secret) {
++      throw new Error('Foundation signing context or secret is unavailable');
++    }
++    customOptions.finalRequestTransform = createFoundationFinalRequestTransform(signing, secret);
++  }
++
+   const clientOptions: Record<string, unknown> = {
+     reverseProxyUrl: baseURL ?? null,
+     baseURLIsUserProvided: userProvidesURL,
+diff --git a/packages/api/src/endpoints/openai/config.ts b/packages/api/src/endpoints/openai/config.ts
+index fba96de..8354985 100644
+--- a/packages/api/src/endpoints/openai/config.ts
++++ b/packages/api/src/endpoints/openai/config.ts
+@@ -322,6 +322,15 @@ export function getOpenAIConfig(
+     }
+   }
+ 
++  if (options.finalRequestTransform != null) {
++    const next = (configOptions.fetch ?? globalThis.fetch) as unknown as (
++      url: string | URL | Request,
++      init?: RequestInit,
++    ) => Promise<Response>;
++    configOptions.fetch = ((url: string | URL | Request, init?: RequestInit) =>
++      options.finalRequestTransform!(url, init, next)) as unknown as Fetch;
++  }
++
+   const result: t.OpenAIConfigResult = {
+     llmConfig,
+     configOptions,
+diff --git a/packages/api/src/types/endpoints.ts b/packages/api/src/types/endpoints.ts
+index 88e5479..89a23c4 100644
+--- a/packages/api/src/types/endpoints.ts
++++ b/packages/api/src/types/endpoints.ts
+@@ -40,10 +40,21 @@ export interface EndpointDbMethods {
+ }
+ 
+ /** Transport-free state consumed while resolving provider credentials and configuration. */
++export interface FoundationSigningContext {
++  owner: string;
++  attachmentIds: string[];
++  capability: 'CHAT' | 'SEARCH' | 'CODE' | 'DATA' | 'FILES' | 'VISION';
++  scope: string;
++  longRunning: boolean;
++  ready: boolean;
++}
++
+ export interface EndpointRuntimeContext {
+   appConfig?: AppConfig;
+   user?: IUser;
+   requestBody: RequestBody;
++  /** Trusted, request-local authority populated by the host; never from model text. */
++  foundationSigning?: FoundationSigningContext;
+ }
+ 
+ /**
+diff --git a/packages/api/src/types/openai.ts b/packages/api/src/types/openai.ts
+index 7c87667..424fede 100644
+--- a/packages/api/src/types/openai.ts
++++ b/packages/api/src/types/openai.ts
+@@ -30,6 +30,12 @@ export interface OpenAIConfigOptions {
+   addParams?: Record<string, unknown>;
+   dropParams?: string[];
+   customParams?: Partial<TConfig['customParams']>;
++  /** Trusted host wrapper around the already-selected final transport. */
++  finalRequestTransform?: (
++    url: string | URL | Request,
++    init: RequestInit | undefined,
++    next: (url: string | URL | Request, init?: RequestInit) => Promise<Response>,
++  ) => Promise<Response>;
+ }
+ 
+ export type OpenAIConfiguration = OpenAIClientOptions['configuration'];

@@ -1,0 +1,53 @@
+name: Foundation M1 KLM non-worker parent #555 admission preflight
+
+on:
+  push:
+    branches: [feat/klm-llmperks-research-intake-minimal-20261110]
+    paths:
+      - '.github/workflows/m1-klm-nonworker-parent-preflight.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  readonly-existing-development-state:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.head_commit.message == 'test(m1): verify non-worker Harness parent idle observation'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: 8a3690d26f5ab584f85d3ce165884d3120088f75
+          persist-credentials: false
+      - name: Recheck live ready Issues and existing worker markers with patched predicate
+        shell: bash
+        env:
+          PYTHONPATH: src:scripts
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 8a3690d26f5ab584f85d3ce165884d3120088f75
+          /opt/homebrew/bin/python3 -B - <<'PY'
+          import json, time
+          from pathlib import Path
+          from scripts.m1_klm_status_probe import _fixed_service_paths,_json_owner,MAX_CONFIG
+          from ai_foundation.klm_drive_work import read_development_state
+          import local9b_issue_bridge as bridge
+          import local9b_task_selection as selection
+          _, path = _fixed_service_paths(Path.home())
+          cfg,_ = _json_owner(path,MAX_CONFIG)
+          worker = Path(cfg["foundation_root"])/"local9b-autodev"
+          result=read_development_state(worker,bridge,selection)
+          if not result.complete or result.non_worker_approved < 1:
+              raise ValueError("EXACT_HARNESS_PARENT_RECOGNITION_UNVERIFIED")
+          print("KLM_DEV_OBSERVATION=COMPLETE")
+          print("KLM_NON_EXECUTABLE_PARENT_COUNT="+str(result.non_worker_approved))
+          print("KLM_EXECUTABLE_DEV_PENDING="+str(result.approved_pending))
+          print("KLM_ACTIVE_OR_UNCERTAIN="+str(result.active_or_uncertain))
+          print("KLM_IDLE_CANDIDATE="+str(result.idle(time.time())))
+          print("KLM_COMPUTE_LEASE=NOT_ACQUIRED")
+          print("KLM_MODEL_CALLS=0")
+          print("PRODUCTION_WRITES=0")
+          PY

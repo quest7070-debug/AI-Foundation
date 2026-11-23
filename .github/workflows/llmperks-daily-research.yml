@@ -1,0 +1,184 @@
+name: Foundation daily LLMPerks public research to Issue and owner Drive
+
+# The scheduler is published independently of the broader Draft PR #537.
+# Always run the exact previously CI/owner-M1-accepted research tree.
+# No third-party inference, model or provider admission, paid runner, or OAuth.
+on:
+  schedule:
+    - cron: '17 0 * * *' # Daily 09:17 JST; schedules run on default branch only.
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/llmperks-daily-research.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: llmperks-daily-research
+  cancel-in-progress: false
+
+jobs:
+  owner-research-only:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      PYTHONPATH: src
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Checkout immutable previously accepted source
+        uses: actions/checkout@v5
+        with:
+          ref: 3de57685f6f5e17f6727cea87eae42692cb824a7
+          persist-credentials: false
+      - name: Verify source identity, Python and research-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '3de57685f6f5e17f6727cea87eae42692cb824a7'
+          test -x /opt/homebrew/bin/python3
+          test -f src/ai_foundation/llmperks_issue_archive.py
+          test -f src/ai_foundation/llmperks_owner_drive.py
+          test -f src/ai_foundation/development_drive_text_runtime.py
+          test -f src/ai_foundation/llmperks_klm_folder.py
+          mkdir -p llmperks-research
+          echo "LLMPERKS_PIN=VERIFIED"
+      - name: Read last public research snapshot from Issue 536
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3 -B - <<'PY'
+          import json,os
+          from pathlib import Path
+          from urllib import request
+          class NoRedirect(request.HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs): return None
+          url="https://api.github.com/repos/quest7070-dev/AI-Foundation/issues/536"
+          op=request.build_opener(request.ProxyHandler({}),NoRedirect())
+          req=request.Request(url,headers={
+              "Authorization":"Bearer "+os.environ["GH_TOKEN"],
+              "Accept":"application/vnd.github+json",
+              "X-GitHub-Api-Version":"2022-11-28"},method="GET")
+          with op.open(req,timeout=15) as response:
+              data=json.loads(response.read(131073))
+          body=data.get("body")
+          if type(body) is not str:
+              raise ValueError("RESEARCH_ISSUE_BODY_UNAVAILABLE")
+          Path("llmperks-research/prior-issue.md").write_text(body,encoding="utf-8")
+          PY
+          /opt/homebrew/bin/python3 -B -m ai_foundation.llmperks_issue_archive restore \
+            --body llmperks-research/prior-issue.md \
+            --snapshot llmperks-research/snapshot.json
+      - name: Fetch public sources and calculate non-executable rankings
+        shell: bash
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3 -B scripts/llmperks_discovery.py \
+            --snapshot llmperks-research/snapshot.json \
+            --report llmperks-research/report.json \
+            --ranked llmperks-research/rankings.json \
+            --service-routes llmperks-research/service-routes.json
+          /opt/homebrew/bin/python3 -B -m ai_foundation.llmperks_issue_archive render \
+            --snapshot llmperks-research/snapshot.json \
+            --report llmperks-research/report.json \
+            --ranked llmperks-research/rankings.json \
+            --service-routes llmperks-research/service-routes.json \
+            --body llmperks-research/issue.md \
+            --payload llmperks-research/issue-patch.json
+      - name: Store latest research in existing GitHub Issue and independently read back
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3 -B - <<'PY'
+          import json,os
+          from pathlib import Path
+          from urllib import request
+          from ai_foundation.llmperks_issue_archive import decode_snapshot
+          class NoRedirect(request.HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs): return None
+          op=request.build_opener(request.ProxyHandler({}),NoRedirect())
+          url="https://api.github.com/repos/quest7070-dev/AI-Foundation/issues/536"
+          headers={"Authorization":"Bearer "+os.environ["GH_TOKEN"],
+                   "Accept":"application/vnd.github+json",
+                   "X-GitHub-Api-Version":"2022-11-28"}
+          def api(method,body=None):
+              payload=None if body is None else json.dumps({"body":body}).encode("utf-8")
+              req=request.Request(url,headers={**headers,
+                  **({"Content-Type":"application/json"} if payload is not None else {})},
+                  data=payload,method=method)
+              with op.open(req,timeout=15) as response:
+                  return json.loads(response.read(131073))
+          prior=Path("llmperks-research/prior-issue.md").read_text(encoding="utf-8")
+          desired=Path("llmperks-research/issue.md").read_text(encoding="utf-8")
+          current=api("GET").get("body")
+          if current != prior:
+              raise ValueError("RESEARCH_ISSUE_CHANGED_DURING_RUN")
+          if current != desired:
+              if api("PATCH",desired).get("number")!=536:
+                  raise ValueError("ISSUE_WRITE_IDENTITY_UNVERIFIED")
+              status="UPDATED"
+          else:
+              status="UNCHANGED"
+          after=api("GET").get("body")
+          if after != desired:
+              raise ValueError("RESEARCH_ISSUE_INDEPENDENT_READBACK_MISMATCH")
+          restored=decode_snapshot(after)
+          expected=json.loads(Path("llmperks-research/snapshot.json").read_text(encoding="utf-8"))
+          if restored != expected:
+              raise ValueError("RESEARCH_ISSUE_SNAPSHOT_READBACK_MISMATCH")
+          print("LLMPERKS_ISSUE_DAILY="+status+"_VERIFIED")
+          PY
+      - name: Save on owner Drive with existing consented drive.file and independent readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3 -B - <<'PY'
+          import os,subprocess,sys
+          cmd=["/opt/homebrew/bin/python3","-B","scripts/llmperks_owner_cycle.py","--write-note"]
+          try:
+              output=subprocess.run(cmd,env=os.environ,capture_output=True,text=True,timeout=100)
+          except subprocess.TimeoutExpired:
+              print("LLMPERKS_OWNER_DRIVE=UNVERIFIED:TIMEOUT")
+              sys.exit(2)
+          fields=dict(line.split("=",1) for line in output.stdout.splitlines() if "=" in line)
+          status=fields.get("LLMPERKS_OWNER_DRIVE")
+          digest=fields.get("RESEARCH_SHA256","")
+          if output.returncode or len(digest)!=64 or status not in (
+              "RESEARCH_NOTE_CREATED_READBACK_VERIFIED",
+              "RESEARCH_NOTE_ALREADY_VERIFIED"):
+              # Deliberately do not log private token, paths or raw exceptions.
+              print("LLMPERKS_OWNER_DRIVE=UNVERIFIED")
+              sys.exit(2)
+          print("LLMPERKS_OWNER_DRIVE="+status)
+          # The owner app can manage its own files, but the pre-existing
+          # KLM folder is outside drive.file. Use the fixed app-owned KLM
+          # research folder, already read-verified by KLM's separate token.
+          place=subprocess.run(
+              ["/opt/homebrew/bin/python3","-B",
+               "scripts/llmperks_place_note.py","--sha256",digest],
+              env=os.environ,capture_output=True,text=True,timeout=60)
+          placed=dict(line.split("=",1) for line in place.stdout.splitlines() if "=" in line)
+          move=placed.get("LLMPERKS_KLM_FOLDER")
+          if (place.returncode or placed.get("LLMPERKS_KLM_FOLDER_DIGEST")!=digest
+                  or move not in (
+                      "RESEARCH_NOTE_MOVED_TO_FOLDER",
+                      "RESEARCH_NOTE_ALREADY_IN_FOLDER")):
+              print("LLMPERKS_KLM_FOLDER=UNVERIFIED")
+              sys.exit(2)
+          print("LLMPERKS_KLM_FOLDER="+move)
+          print("KLM_INFERENCE=NOT_TRIGGERED_BY_RESEARCH_WRITER")
+          print("PROVIDER_INFERENCE_CALLS=0")
+          print("MODEL_ADMISSION=DISABLED")
+          print("KLM_9B_CALLS=0")
+          PY

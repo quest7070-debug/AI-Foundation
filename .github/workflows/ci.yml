@@ -1,0 +1,492 @@
+name: Foundation CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-ci-${{ github.event_name == 'issues' && github.event.issue.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'issues' }}
+
+jobs:
+  # Full M1 unit suite includes the focused planner and Guard tests.
+  # Avoid a duplicate billed Ubuntu job.
+  unit:
+    # Persistent M1 host must not execute fork-controlled PR code.
+    if: >-
+      (github.event_name != 'issues' &&
+       (github.event_name != 'pull_request' ||
+        (github.event.pull_request.head.repo.full_name == github.repository &&
+         github.event.pull_request.user.login == 'quest7070-debug'))) ||
+      (github.repository == 'quest7070-dev/AI-Foundation' &&
+       github.event_name == 'issues' &&
+       github.event.issue.user.login == 'quest7070-debug' &&
+       github.event.issue.title == 'Foundation M1 Bridge: verify-main')
+    permissions:
+      contents: read
+      issues: read
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: .foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate exact bridge verification request before environment or tests
+        if: github.event_name == 'issues'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: /usr/bin/python3 -B scripts/m1_development_bridge.py --verification-preflight
+      - name: Discover canonical host Python
+        shell: bash
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          uname -a
+          sw_vers
+
+          candidates=(
+            /opt/homebrew/bin/python3.13
+            /opt/homebrew/bin/python3.12
+            /opt/homebrew/bin/python3
+            /usr/local/bin/python3.13
+            /usr/local/bin/python3.12
+            /usr/local/bin/python3
+            /usr/bin/python3
+          )
+
+          selected=""
+          for candidate in "${candidates[@]}"; do
+            if [[ ! -x "$candidate" ]]; then
+              continue
+            fi
+            version="$("$candidate" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")')"
+            echo "candidate=$candidate version=$version"
+            if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)'; then
+              selected="$candidate"
+              break
+            fi
+          done
+
+          if [[ -z "$selected" ]]; then
+            echo "::error::No Python >=3.12 found in canonical macOS locations. Install/pin a host interpreter before running Foundation CI."
+            exit 1
+          fi
+
+          echo "FOUNDATION_PYTHON=$selected" >> "$GITHUB_ENV"
+          echo "selected=$selected"
+          "$selected" --version
+
+      - name: Install pinned uv
+        shell: bash
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          version="0.8.22"
+          archive="uv-aarch64-apple-darwin.tar.gz"
+          expected="3f61099e261e449527141dbf125629fab33ad696468c8c90cebbac40185a306c"
+          url="https://github.com/astral-sh/uv/releases/download/${version}/${archive}"
+          mkdir -p .tools/uv
+          if curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 90 "$url" -o ".tools/uv/$archive"; then
+            actual="$(shasum -a 256 ".tools/uv/$archive" | awk '{print $1}')"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "::error::uv GitHub release archive checksum mismatch"
+              exit 1
+            fi
+            tar -xzf ".tools/uv/$archive" -C .tools/uv
+            uv_bin="$PWD/.tools/uv/uv-aarch64-apple-darwin/uv"
+          else
+            # Official PyPI wheel for the SAME uv release and macOS ARM64.
+            # Use only after GitHub download failed. This is SHA256-pinned,
+            # not a mutable pip index or arbitrary mirror.
+            wheel="uv-0.8.22-py3-none-macosx_11_0_arm64.whl"
+            wheel_sha="6706b782ad75662df794e186d16b9ffa4946d57c88f21d0eadfd43425794d1b0"
+            wheel_url="https://files.pythonhosted.org/packages/d7/ca/bf37d86af6e16e45fa2b1a03300784ff3297aa9252a23dfbeaf6e391e72e/$wheel"
+            curl --fail --location --silent --show-error --retry 2 --retry-all-errors --retry-delay 2 "$wheel_url" -o ".tools/uv/$wheel"
+            actual="$(shasum -a 256 ".tools/uv/$wheel" | awk '{print $1}')"
+            if [[ "$actual" != "$wheel_sha" ]]; then
+              echo "::error::uv official PyPI wheel SHA256 mismatch"
+              exit 1
+            fi
+            uv_bin="$PWD/.tools/uv/pypi/uv"
+            "$FOUNDATION_PYTHON" -B scripts/extract_verified_uv_wheel.py ".tools/uv/$wheel" "$uv_bin"
+          fi
+          test -x "$uv_bin"
+          uv_version="$("$uv_bin" --version)"
+          if [[ ! "$uv_version" =~ ^uv[[:space:]]0[.]8[.]22([[:space:]]|$) ]]; then
+            echo "::error::uv verified binary version does not match pinned 0.8.22"
+            exit 1
+          fi
+          echo "verified $uv_version"
+          echo "UV_BIN=$uv_bin" >> "$GITHUB_ENV"
+      - name: Set run-scoped uv cache
+        shell: bash
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/uv-cache-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$cache"
+          echo "UV_CACHE_DIR=$cache" >> "$GITHUB_ENV"
+
+      - name: Sync frozen environment
+        shell: bash
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          "$UV_BIN" sync --frozen --extra dev --python "$FOUNDATION_PYTHON"
+      - name: Compile
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: .venv/bin/python -m compileall -q src tests scripts
+      - name: Isolated filesystem MCP lifecycle acceptance (owned probe only)
+        if: >-
+          github.event_name == 'pull_request' &&
+          ((github.event.pull_request.number == 183 &&
+            github.event.pull_request.head.ref == 'feat/scoped-file-discovery-20261104') ||
+           github.event.pull_request.head.ref == 'fix/toolhive-owned-probe-cleanup-20261104')
+        shell: bash
+        env:
+          AI_FOUNDATION_FILES_LISTING_ISOLATED: "1"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          sh scripts/bootstrap-toolhive.sh
+          thv="$PWD/.tools/toolhive/thv"
+          image="docker.io/mcp/filesystem:1.0.2"
+          expected="sha256:720393842ef8b0f33713a42e2eebda51ff600756c19d53e1244645ec59496fef"
+          test "$(docker image inspect "$image" --format '{{.Id}}')" = "$expected"
+          digest="$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')"
+          [[ "$digest" =~ ^(docker\.io/)?mcp/filesystem@sha256:[0-9a-f]{64}$ ]]
+          server="foundation-files-pr183-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          # Refuse any colliding name or mismatched ownership before startup.
+          .venv/bin/python scripts/owned_toolhive_probe_cleanup.py preflight "$server"
+          if "$thv" status "$server" >/dev/null 2>&1; then
+            echo "::error::PROBE_TOOLHIVE_REGISTRY_IDENTITY_EXISTS"
+            exit 1
+          fi
+          root="$(mktemp -d "$RUNNER_TEMP/foundation-files-pr183-XXXXXX")"
+          chmod 755 "$root"
+          started=false
+          phase=startup
+          ready=false
+          isolated=unknown
+          cleanup() {
+            result=$?
+            trap - EXIT
+            removed=true
+            if [ "$started" = true ]; then
+              if ! .venv/bin/python -c 'import subprocess,sys; sys.exit(subprocess.run(sys.argv[1:],timeout=30).returncode)' "$thv" rm "$server" >"$root/cleanup.log" 2>&1; then
+                echo "::warning::PROBE_TOOLHIVE_RM_FAILED"
+              fi
+            fi
+            # Independently remove and read back the entire run-owned Docker
+            # family; a missing primary container is not proof of DNS/egress cleanup.
+            if ! .venv/bin/python scripts/owned_toolhive_probe_cleanup.py cleanup "$server"; then removed=false; fi
+            if "$thv" status "$server" >/dev/null 2>&1; then removed=false; fi
+            if [ "$result" -ne 0 ]; then
+              echo "::error::FILES_PROBE_FAILED phase=$phase inventory_ready=$ready network_isolation=$isolated"
+            fi
+            if [ "$removed" = true ]; then
+              rm -rf "$root"
+              echo "FILES_ISOLATED_OWNED_FAMILY_REMOVED"
+            else
+              echo "::error::FILES_PROBE_CLEANUP_UNVERIFIED; fixture retained for diagnosis"
+              result=1
+            fi
+            exit "$result"
+          }
+          trap cleanup EXIT
+          started=true
+          "$thv" run --transport stdio --proxy-mode streamable-http --name "$server" \
+            --isolate-network --image-verification warn --volume "$root:/projects:ro" \
+            "$digest" -- /projects >"$root/launch.log" 2>&1 &
+          phase=mcp-inventory
+          for attempt in $(seq 1 15); do
+            if "$thv" mcp list --server "$server" --format json --timeout 3s >/dev/null 2>&1; then ready=true; break; fi
+            sleep 1
+          done
+          test "$ready" = true
+          phase=network-isolation
+          isolated="$(docker inspect "$server" --format '{{ index .Config.Labels "toolhive-network-isolation" }}')"
+          test "$isolated" = true
+          phase=agent-loop
+          export AI_FOUNDATION_FILES_PROBE_SERVER="$server"
+          export AI_FOUNDATION_FILES_PROBE_ROOT="$root"
+          .venv/bin/python -m pytest -q -s tests/test_file_listing_live.py -k isolated
+          phase=done
+      - name: PR188 existing-workload FILES integration acceptance
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.number == 188 &&
+          github.event.pull_request.head.ref == 'integration/files-artifacts-20261104'
+        shell: bash
+        env:
+          AI_FOUNDATION_FILES_LISTING_LIVE: "1"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          # Observation-only acceptance: never recreate, stop or reconfigure production MCP.
+          sh scripts/bootstrap-toolhive.sh
+          test -d /tmp/ai-foundation-toolhive
+          test "$(docker image inspect docker.io/mcp/filesystem:1.0.2 --format '{{.Id}}')" = "sha256:720393842ef8b0f33713a42e2eebda51ff600756c19d53e1244645ec59496fef"
+          .venv/bin/python -m pytest -q -s tests/test_file_listing_live.py::test_existing_toolhive_list_read_data_and_scope_denials
+      - name: PR188 combined Agent FILES/Guard regression
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.number == 188 &&
+          github.event.pull_request.head.ref == 'integration/files-artifacts-20261104'
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: .venv/bin/python -m pytest -q tests/test_file_artifact_integration.py
+      - name: Install pinned Cedar CLI
+        shell: bash
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          version="4.13.0"
+          archive="cedar-policy-cli-aarch64-apple-darwin.tar.xz"
+          expected="53c3ddc467519a3371919a92da1167fe143d9eb8efe0b29fdde8237fa0fe9cae"
+          url="https://github.com/cedar-policy/cedar/releases/download/cedar-policy-cli-v${version}/${archive}"
+          mkdir -p .tools/cedar
+          if ! curl --fail --location --silent --show-error --retry 2 --retry-all-errors --retry-delay 2 "$url" -o ".tools/cedar/$archive"; then
+            # Official immutable release asset ID, independently verified
+            # against cedar-policy/cedar v4.13.0 metadata. On a release CDN
+            # 504 ask GitHub's own release-asset API for the same bytes.
+            # An API JSON reply or an altered blob fails the SHA256 below.
+            asset="https://api.github.com/repos/cedar-policy/cedar/releases/assets/566176976"
+            curl --fail --location --silent --show-error --retry 2 --retry-all-errors --retry-delay 2 \
+              --header "Accept: application/octet-stream" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "$asset" -o ".tools/cedar/$archive"
+          fi
+          actual="$(shasum -a 256 ".tools/cedar/$archive" | awk '{print $1}')"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::Cedar CLI checksum mismatch: $actual"
+            exit 1
+          fi
+          tar -xJf ".tools/cedar/$archive" -C .tools/cedar
+          cedar=".tools/cedar/cedar-policy-cli-aarch64-apple-darwin/cedar"
+          test -x "$cedar"
+          "$cedar" --version
+      - name: Cedar policy preflight
+        shell: bash
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          cedar=".tools/cedar/cedar-policy-cli-aarch64-apple-darwin/cedar"
+          "$cedar" authorize \
+            -l 'User::"local-owner"' \
+            -a 'Action::"write"' \
+            -r 'Target::"repo"' \
+            -p policy/default.cedar \
+            -s policy/schema.cedarschema \
+            --schema-format cedar \
+            --entities policy/entities.json
+      - name: Agent Skills numeric-array contract preflight (PR 553 only)
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.number == 553 &&
+          github.event.pull_request.head.ref == 'plan/agent-skills-workflow-20261110'
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          .venv/bin/python -m pytest -q \
+            tests/test_auto_capability.py::test_host_array_tool_schema_is_concrete_for_local_llms \
+            tests/test_auto_capability.py::test_host_numeric_array_contract_requests_one_model_retry_before_data \
+            tests/test_capability_execution.py::test_host_numeric_array_contract_enforced_at_data_executor_boundary
+      - name: Agent Skills exact-M1 one-shot resource-gated acceptance (PR 553 only)
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.number == 553 &&
+          github.event.pull_request.head.ref == 'plan/agent-skills-workflow-20261110'
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          # One-shot public fixture only; cold load requires exact installed
+          # 9B digest, free host lease, and canonical 9B CPU/RAM admission.
+          AGENT_SKILLS_ONE_SHOT_COLD_START: "1"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          # A single bounded pre-lease cooldown lets this job's own install
+          # load subside. Do not hold the shared lease while observing CPU.
+          .venv/bin/python - <<'PY'
+          import os, time
+          for attempt in range(4):
+              count = os.cpu_count()
+              try: load = os.getloadavg()[0]
+              except OSError: break
+              if type(count) is int and count > 0 and 0 <= load < .85 * count:
+                  break
+              if attempt < 3: time.sleep(12)
+          PY
+          # Wait for a naturally idle Ollama window BEFORE taking the
+          # shared compute lease. This is one bounded job-local check, not a
+          # new daemon, background worker, recurring schedule, or model kill.
+          .venv/bin/python - <<'PY'
+          import json, time
+          from urllib.request import Request, build_opener, ProxyHandler
+          opener = build_opener(ProxyHandler({}))
+          model = "qwen3.5:9b"
+          code = "WAIT_WINDOW_EXHAUSTED"
+          for attempt in range(37):
+              try:
+                  with opener.open(Request("http://127.0.0.1:11434/api/ps"),
+                                   timeout=3) as response:
+                      if response.status != 200: raise ValueError("Ollama not ready")
+                      inventory = json.loads(response.read(65537))
+                  models = inventory.get("models")
+                  if not isinstance(models, list): raise ValueError("bad inventory")
+                  if not models or (len(models) == 1 and
+                          isinstance(models[0], dict) and
+                          (models[0].get("name") == model or
+                           models[0].get("model") == model)):
+                      code = "IDLE_WINDOW_OBSERVED"
+                      break
+              except (OSError, ValueError, TypeError):
+                  code = "RESOURCE_INVENTORY_UNKNOWN"
+                  break
+              if attempt < 36:
+                  time.sleep(10)
+          print("AGENT_SKILLS_PRELEASE=" + code, flush=True)
+          PY
+          # Existing per-user host lease. Never terminate a shared model/process.
+          # A busy lease is an explicit blocked admission, not a model failure.
+          set +e
+          .venv/bin/python scripts/host_compute_lease.py run --max-wait-seconds 0 -- .venv/bin/python -B scripts/agent_skills_m1_acceptance.py
+          code=$?
+          set -e
+          if [[ "$code" == "75" ]]; then
+            echo 'AGENT_SKILLS_M1_RECEIPT={"schema":1,"status":"BLOCKED_HOST_COMPUTE_LEASE","readback_verified":false}'
+          elif [[ "$code" != "0" ]]; then
+            echo "::error::Agent Skills real-M1 live acceptance failed (exit code $code)"
+            exit "$code"
+          fi
+      - name: Test (bounded source-scope regression; real M1 acceptance separate)
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          # Narrow, explicitly enumerated Strata-only changes use a short
+          # regression covering router/privacy/inference/owner config. Every
+          # mixed, security, HumanModel, KLM, workflow or unknown change stays
+          # on the old full suite. Full suite is always available on dispatch.
+          # This is not production acceptance: exact owner-bound M1 E2E and
+          # Guard-approved Operator readback remain separate mandatory gates.
+          tests_file="$RUNNER_TEMP/foundation-ci-selected-tests-$GITHUB_RUN_ID"
+          "$FOUNDATION_PYTHON" -B - <<'PY' > "$tests_file"
+          import os
+          import re
+          import subprocess
+
+          allowed = frozenset({
+              "src/ai_foundation/compute_routing.py",
+              "src/ai_foundation/model_work_roles.py",
+              "src/ai_foundation/inference_service.py",
+              "src/ai_foundation/routed_agent_model.py",
+              "scripts/m1_strata_text_owner_activation.py",
+              "scripts/m1_strata_local_first_setup.py",
+              "tests/test_compute_routing.py",
+              "tests/test_model_work_roles.py",
+              "tests/test_mainpc_strata_route.py",
+              "tests/test_inference_service.py",
+              "tests/test_routed_agent_model.py",
+              "tests/test_m1_strata_text_owner_activation.py",
+              "tests/test_m1_strata_local_first_setup.py",
+          })
+          smoke = (
+              "tests/test_compute_routing.py",
+              "tests/test_model_work_roles.py",
+              "tests/test_mainpc_strata_route.py",
+              "tests/test_inference_service.py",
+              "tests/test_routed_agent_model.py",
+              "tests/test_m1_strata_text_owner_activation.py",
+              "tests/test_m1_strata_local_first_setup.py",
+          )
+          event = os.environ.get("GITHUB_EVENT_NAME")
+          base = (os.environ.get("PR_BASE_SHA") if event == "pull_request"
+                  else os.environ.get("PUSH_BEFORE_SHA") if event == "push"
+                  else None)
+          if base and re.fullmatch(r"[0-9a-f]{40}", base) and base != "0"*40:
+              try:
+                  fetched = subprocess.run(
+                      ["git", "fetch", "--quiet", "--no-tags", "--depth=1",
+                       "origin", base], capture_output=True, timeout=30,
+                      check=False)
+                  if fetched.returncode == 0:
+                      changed = subprocess.run(
+                          ["git", "diff", "--name-only", "-z", base, "HEAD"],
+                          capture_output=True, timeout=10, check=False)
+                      if changed.returncode == 0:
+                          paths = frozenset(
+                              p.decode("utf-8", "surrogateescape")
+                              for p in changed.stdout.split(b"\x00") if p)
+                          if paths and paths.issubset(allowed):
+                              print("\n".join(smoke))
+              except (OSError, subprocess.TimeoutExpired):
+                  pass
+          PY
+          if [[ -s "$tests_file" ]]; then
+            focused=()
+            while IFS= read -r test_file; do
+              [[ -n "$test_file" ]] && focused+=("$test_file")
+            done < "$tests_file"
+            echo "FOCUSED_STRATA_REGRESSION / ${#focused[@]} fixed test files"
+            .venv/bin/python -m pytest -q "${focused[@]}"
+          else
+            echo "FULL_REGRESSION / risk-scoped or unknown changes"
+            .venv/bin/python -m pytest -q
+          fi
+      - name: Human-model external SSD synthetic-mount contracts
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          source_root="$PWD"
+          cd experiments/human_model
+          "$source_root/.venv/bin/python" -B -m unittest -v test_external_ledger
+
+  bridge-verification-receipt:
+    needs: unit
+    if: >-
+      always() && github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event_name == 'issues' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      github.event.issue.title == 'Foundation M1 Bridge: verify-main'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 4
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: .foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Revalidate exact request and publish only bounded CI outcome
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BRIDGE_CI_OUTCOME: ${{ needs.unit.result }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: /usr/bin/python3 -B scripts/m1_development_bridge.py --verification-receipt
+
+

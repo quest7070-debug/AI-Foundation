@@ -1,0 +1,72 @@
+name: Foundation M1 existing guarded MCP source refresh
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [synchronize]
+    paths:
+      - "scripts/m1_guarded_tunnel_refresh.py"
+      - "tests/test_m1_guarded_tunnel_refresh.py"
+      - ".github/workflows/m1-guarded-tunnel-refresh.yml"
+      - "scripts/m1_selfdev_release_preflight.py"
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: foundation-one-existing-tunnel-cutover
+  cancel-in-progress: false
+jobs:
+  refresh:
+    if: >-
+      github.event_name == 'issues' &&
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      startsWith(github.event.issue.title, 'Foundation M1 Guarded MCP Refresh: ')
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Refresh the same owner guarded tunnel once with rollback
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: src:.
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: /opt/homebrew/bin/python3.12 -B scripts/m1_guarded_tunnel_refresh.py
+
+  refresh-exact-owner-pr:
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    # A PR update is never authorization. Only a matching real owner Issue
+    # unlocks the original one-shot M1 existing tunnel refresh.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.pull_request.number == 1514 &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/p0-selfdev-fastlane-single-acceptance-20261121' &&
+      github.event.pull_request.base.ref == 'fix/p0-operator-review-runtime-import-root-20261121' &&
+      github.event.pull_request.base.sha == 'd4ef51c2dbbe957eb5ed55b6897bd4a43d29110f'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: .foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Owner-Issue-gated single existing MCP tunnel refresh
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: src:scripts:.
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: /opt/homebrew/bin/python3.12 -B scripts/m1_guarded_tunnel_refresh.py --owner-pr

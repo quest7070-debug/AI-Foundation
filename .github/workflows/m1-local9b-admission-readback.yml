@@ -1,0 +1,42 @@
+name: Foundation M1 local9B admission release readback
+
+# Never install, call a model, modify queues or grant a release.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-m1-9b-admission-readback-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.pull_request.number == 561 &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/local9b-admission-false-contention-20261110'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify exact P4 prior worker or installed new worker independently
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import json
+          from scripts.m1_local9b_admission_readback import readback
+          result = readback()
+          print("LOCAL9B_ADMISSION_READBACK=" + json.dumps(result, sort_keys=True))
+          if result["status"] not in ("PRIOR_WORKER_OBSERVED", "APPLIED_VERIFIED"):
+              raise SystemExit(1)
+          PY

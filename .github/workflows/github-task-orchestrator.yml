@@ -1,0 +1,90 @@
+name: Foundation GitHub task orchestrator
+
+# Preserve manual and milestone-driven planning while avoiding a burst of
+# paid Ubuntu jobs for every check_suite/workflow_run and PR synchronize.
+# Foundation CI failures still feed the M1 autonomy intake separately.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 0 * * *"
+  issues:
+    types: [opened, labeled]
+  # Trusted default-branch checkout, never PR-head code.
+  pull_request_target:
+    types: [opened, ready_for_review, closed]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  actions: read
+  checks: read
+  statuses: read
+
+# Keep Issue-triggered plans independent; frequent PR and main pushes must not
+# cancel a different owner's explicitly opened/labeled Issue.
+concurrency:
+  group: foundation-github-task-orchestrator-${{ github.event_name }}-${{ github.event_name == 'issues' && github.event.issue.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request_target' }}
+
+jobs:
+  discover-and-plan:
+    # M1 bridge/release Issues are dedicated operational requests, not
+    # development intake. Starting a full planner for each one needlessly
+    # contends with the exact same self-hosted M1 runner and release jobs.
+    # Keep ordinary Issue intake, scheduled plans, PR and main events intact.
+    if: >-
+      github.event_name != 'issues' ||
+      !(startsWith(github.event.issue.title, 'Foundation M1 Bridge:') ||
+        startsWith(github.event.issue.title, 'Foundation M1 Operator Release:') ||
+        startsWith(github.event.issue.title, 'Foundation M1 9B Release:') ||
+        startsWith(github.event.issue.title, 'Foundation M1 Worker Release:'))
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 8
+    # Other M1 workflows share the host. Planning must not execute from the
+    # checkout that another job can reset between checkout and invocation.
+    env:
+      FOUNDATION_ORCHESTRATOR_ROOT: ${{ github.workspace }}/.foundation-orchestrator/${{ github.run_id }}-${{ github.run_attempt }}
+    defaults:
+      run:
+        working-directory: .foundation-orchestrator/${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          ref: main
+          path: .foundation-orchestrator/${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Discover GitHub work and render a read-only plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Always run the trusted main planner; never trust an Issue/PR head.
+          # Missing source or a changed checkout is a failure, not a fallback.
+          if [[ "$PWD" != "$FOUNDATION_ORCHESTRATOR_ROOT" ||
+                ! -f scripts/github_task_orchestrator.py ||
+                ! -f .github/workflows/github-task-orchestrator.yml ||
+                "$(git rev-parse HEAD)" != "$(git rev-parse refs/remotes/origin/main)" ]]; then
+            echo "::error::ORCHESTRATOR_TRUSTED_MAIN_SOURCE_DRIFT"
+            exit 1
+          fi
+          /usr/bin/python3 -B scripts/github_task_orchestrator.py --repo "$GITHUB_REPOSITORY" --output "$RUNNER_TEMP/foundation-autodev-plan.json" --candidate-output "$RUNNER_TEMP/foundation-native-handoff-candidates.json" --summary "$GITHUB_STEP_SUMMARY" --max-parallel 3
+      - name: Remove only this run-owned planner checkout
+        if: always()
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$GITHUB_WORKSPACE/.foundation-orchestrator/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [[ "$FOUNDATION_ORCHESTRATOR_ROOT" != "$expected" ||
+                -L "$GITHUB_WORKSPACE/.foundation-orchestrator" || -L "$expected" ]]; then
+            echo "::error::ORCHESTRATOR_CLEANUP_SCOPE_UNVERIFIED"
+            exit 1
+          fi
+          if [[ -d "$expected" ]]; then
+            rm -rf -- "$expected"
+          fi
+

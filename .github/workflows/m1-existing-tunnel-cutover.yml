@@ -1,0 +1,57 @@
+name: Foundation M1 single-existing-tunnel guarded development cutover
+
+# Owner PR only; never a second tunnel, main merge or model call.
+on:
+  pull_request:
+    types: [synchronize]
+    paths:
+      - "scripts/m1_guarded_tunnel.py"
+      - "scripts/m1_guarded_tunnel_stdio.py"
+      - "scripts/m1_guarded_tunnel_cutover.py"
+      - "scripts/m1_owner_delegated_mcp_stdio.py"
+      - "tests/test_m1_guarded_tunnel.py"
+      - ".github/workflows/m1-existing-tunnel-cutover.yml"
+permissions:
+  contents: read
+concurrency:
+  group: foundation-one-existing-tunnel-cutover
+  cancel-in-progress: false
+jobs:
+  owner-guarded-cutover:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.pull_request.number == 1321 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/guarded-owner-mcp-separate-tunnel-20261115' &&
+      github.event.pull_request.user.login == 'quest7070-debug'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 6
+    steps:
+      - name: Checkout exact owner PR head without token persistence
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Offline syntax gate
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import ast
+          from pathlib import Path
+          for file in (
+              "scripts/m1_guarded_tunnel.py",
+              "scripts/m1_guarded_tunnel_stdio.py",
+              "scripts/m1_guarded_tunnel_cutover.py",
+              "scripts/m1_owner_delegated_mcp_stdio.py",
+          ):
+              ast.parse(Path(file).read_text())
+          print("OWNER_CUTOVER_SYNTAX_VERIFIED")
+          PY
+      - name: Switch single existing tunnel or fail closed and restore
+        env:
+          PYTHONPATH: src:.
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B scripts/m1_guarded_tunnel_cutover.py

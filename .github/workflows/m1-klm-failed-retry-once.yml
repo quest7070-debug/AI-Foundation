@@ -1,0 +1,32 @@
+name: Foundation M1 KLM single failed retry
+# Exactly one owner-authored Issue; never execute Issue content or model inference.
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: foundation-m1-klm-failed-retry-once
+  cancel-in-progress: false
+jobs:
+  retry-one:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      github.event.issue.title == 'Foundation KLM retry one FAILED: 799a1ad8'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - name: Checkout trusted immutable main
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify owner and stage one durable retry intent without source access
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/m1_klm_failed_retry_once.py

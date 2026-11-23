@@ -1,0 +1,34 @@
+name: Foundation M1 privacy Operator release preflight (read-only)
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-privacy-preflight-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.pull_request.number == 612 &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/no-model-privacy-humanmodel-fastpath-20261110'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Inspect loaded Operator source and retained 9B queue (no effects)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/m1_privacy_operator_preflight.py

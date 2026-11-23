@@ -1,0 +1,27 @@
+name: Human-model M1 local Ollama smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/human_model_ollama_smoke.py
+      - .github/workflows/human-model-m1-ollama-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-ollama-smoke:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Probe local Ollama with synthetic evidence only
+        env:
+          HUMAN_MODEL_OLLAMA_MODEL: ${{ vars.HUMAN_MODEL_OLLAMA_MODEL }}
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/host_compute_lease.py run --max-wait-seconds 45 -- /usr/bin/python3 -B scripts/human_model_ollama_smoke.py

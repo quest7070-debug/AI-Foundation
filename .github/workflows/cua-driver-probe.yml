@@ -1,0 +1,59 @@
+name: Cua Driver Probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit host and Cua prerequisite without installing or widening authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== CUA HOST PRECHECK ==="
+          sw_vers
+          uname -m
+          echo "=== INSTALLED CUA IDENTITY ==="
+          found=0
+          for app in "/Applications/CuaDriver.app" "$HOME/Applications/CuaDriver.app"; do
+            if [ -d "$app" ]; then
+              found=1
+              echo "CUA_APP=$app"
+              /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
+              /usr/bin/codesign -dv --verbose=4 "$app" 2>&1
+              /usr/bin/spctl --assess --type execute --verbose=4 "$app"
+              /usr/bin/mdls -name kMDItemCFBundleIdentifier "$app" || true
+            fi
+          done
+          if [ "$found" -ne 1 ]; then
+            echo "CUA_DRIVER_APP_MISSING"
+            echo "Install the reviewed upstream CuaDriver.app identity before bounded-mode E2E; CI must not self-install or grant TCC."
+            exit 78
+          fi
+          echo "CUA_DRIVER_IDENTITY_PRESENT"
+          echo "=== CUA RUNTIME SURFACE ==="
+          app_path=""
+          [ -d "/Applications/CuaDriver.app" ] && app_path="/Applications/CuaDriver.app"
+          [ -z "$app_path" ] && [ -d "$HOME/Applications/CuaDriver.app" ] && app_path="$HOME/Applications/CuaDriver.app"
+          plist="$app_path/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist" 2>/dev/null || true
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")
+          test -n "$executable"
+          test -x "$app_path/Contents/MacOS/$executable"
+          echo "CUA_EXECUTABLE=$executable"
+          expected_version="0.28.3"
+          observed_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist" 2>/dev/null || true)
+          if [ "$observed_version" != "$expected_version" ]; then
+            echo "CUA_DRIVER_VERSION_MISMATCH expected=$expected_version observed=$observed_version"
+            exit 1
+          fi
+          echo "CUA_DRIVER_PIN_OK=$expected_version"
+          echo "=== CUA AUTHORITY PRECHECK ==="
+          echo "Accessibility and Screen Recording are operator-owned macOS permissions."
+          echo "This workflow does not call tccutil reset, edit the TCC database, or grant permissions."
+          echo "CUA_TCC_AUTOMATION_ABSENT_OK"
+          echo "CUA_DRIVER_RUNTIME_SURFACE_OK"
+          echo "NOTE: bounded manifest/TCC/action probes remain intentionally blocked until the installed identity is matched to the reviewed upstream artifact."

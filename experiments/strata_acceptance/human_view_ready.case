@@ -1,0 +1,23 @@
+from ai_foundation.human_view import from_snapshot
+
+class Snapshot:
+    def __init__(self, value, present=True):
+        self.value, self.present = value, present
+    def as_dict(self):
+        row = {"services": [{"ok": True}], "work": {}, "attention": []}
+        if self.present:
+            row["ready"] = self.value
+        return row
+
+def test_only_boolean_true_certifies_core_readiness():
+    for value in ("false", "true", 1, 2, -1, [], {}, [True], {"ready": True}, None):
+        view = from_snapshot(Snapshot(value))
+        assert view.telemetry.ready is False
+        assert view.runtime_health == "UNVERIFIED"
+    assert from_snapshot(Snapshot(None, present=False)).telemetry.ready is False
+
+def test_real_boolean_readiness_and_history_are_preserved():
+    assert from_snapshot(Snapshot(True)).telemetry.ready is True
+    view = from_snapshot(Snapshot(False))
+    assert view.telemetry.ready is False
+    assert view.runtime_health == "DEGRADED"

@@ -1,0 +1,84 @@
+name: Foundation M1 llama-swap v272 owner package update
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: foundation-m1-llama-swap-v272-owner-upgrade
+  cancel-in-progress: false
+
+jobs:
+  install:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      github.event.issue.title == 'Foundation M1 llama-swap v272 binary upgrade' &&
+      github.event.issue.body == '<!-- foundation-m1-llama-swap-v272:ee16e99873d76e0560000742d2524d7b97932c77c9b57a402283015839ef9d25 -->'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Exact owner issue, digest-bound Homebrew update, no model or service stop
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: src:.
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import json, os, subprocess, urllib.request
+          from pathlib import Path
+          from scripts.m1_llama_swap_upgrade import stage_v272_binary
+          repo='quest7070-dev/AI-Foundation'
+          title='Foundation M1 llama-swap v272 binary upgrade'
+          body='<!-- foundation-m1-llama-swap-v272:ee16e99873d76e0560000742d2524d7b97932c77c9b57a402283015839ef9d25 -->'
+          evt=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+          issue=evt['issue']
+          assert os.environ['GITHUB_REPOSITORY']==repo
+          assert os.environ['GITHUB_ACTOR']=='quest7070-debug'
+          assert issue['user']['login']=='quest7070-debug'
+          assert issue['title']==title and issue['body']==body and issue['state']=='open'
+          assert evt['repository']['full_name']==repo and evt['action']=='opened'
+          exact_sha=subprocess.run(['/usr/bin/git','rev-parse','HEAD'],capture_output=True,text=True,timeout=5)
+          assert exact_sha.returncode==0 and exact_sha.stdout.strip()==os.environ['GITHUB_SHA']
+          root='https://api.github.com/repos/'+repo+'/issues/'+str(issue['number'])
+          headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],
+                   'Accept':'application/vnd.github+json',
+                   'User-Agent':'foundation-llama-swap-v272-owner'}
+          def api(url, payload=None):
+              req=urllib.request.Request(url,headers=headers,
+                 data=json.dumps(payload).encode() if payload is not None else None)
+              with urllib.request.urlopen(req,timeout=20) as resp:
+                  return json.loads(resp.read(262144))
+          live=api(root)
+          assert live['state']=='open' and live['user']['login']=='quest7070-debug'
+          assert live['title']==title and live['body']==body
+          marker='<!-- foundation-llama-swap-v272-upgrade-receipt:v1:'+str(issue['number'])+' -->'
+          existing=api(root+'/comments?per_page=100')
+          assert len(existing)<100
+          if any(x['user']['login']=='github-actions[bot]' and marker in x['body'] for x in existing):
+              raise SystemExit('RECEIPT_ALREADY_RECORDED_NO_REPEAT')
+          try:
+              result=stage_v272_binary()
+          except Exception as err:
+              result={'status':'OWNER_BINARY_STAGE_BLOCKED','failure_type':type(err).__name__,
+                      'model_calls':0,'service_mutations':0}
+          allowed={'status','target','model_calls','service_mutations','model_process_stops',
+                   'launchd_restarts','runtime_version_verified','missing_model_paths','package_version',
+                   'failure_type'}
+          safe={k:v for k,v in result.items()
+                if k in allowed and type(v) in (str,int,bool,float,type(None))}
+          api(root+'/comments',{'body':marker+'\n```json\n'+json.dumps(safe,sort_keys=True,indent=2)+'\n```'})
+          print(json.dumps(safe,sort_keys=True))
+          if safe.get('status') not in {'V272_BINARY_INSTALLED_LIVE_UNVERIFIED',
+                                       'V272_BINARY_ALREADY_PRESENT'}:
+              raise SystemExit(2)
+          PY

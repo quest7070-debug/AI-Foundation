@@ -1,0 +1,31 @@
+name: Foundation M1 owner main Operator release
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: foundation-m1-operator-main-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      startsWith(github.event.issue.title, 'Foundation M1 Operator Release: ')
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact issue-time reviewed main
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify owner Issue and current Canon; Guard + rollback-safe Operator cutover
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: src:.
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: /opt/homebrew/bin/python3.12 -B scripts/m1_github_owner_operator_release.py

@@ -1,0 +1,25 @@
+name: Human-model M1 external ledger readback
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/human_model_ledger_verify.py
+      - .github/workflows/human-model-ledger-readback.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readback:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify existing external SQLite database read-only
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/human_model_ledger_verify.py

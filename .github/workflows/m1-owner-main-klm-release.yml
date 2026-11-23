@@ -1,0 +1,44 @@
+name: Foundation M1 owner main KLM release
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: foundation-m1-klm-main-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.actor == 'quest7070-debug' &&
+      startsWith(github.event.issue.title, 'Foundation M1 KLM Main Release: ')
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      issues: read
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: One exact owner-bound KLM-only Guard release; preserve rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          /opt/homebrew/bin/python3 -B -m scripts.m1_github_owner_klm_main_release --release
+      - name: Independent fresh-process KLM source, LaunchAgent and rollback readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3 -B -m scripts.m1_github_owner_klm_main_release --readback

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "tickets": [
+    {
+      "ticket_id": "strata-dispatcher-binding-v1",
+      "target": "src/ai_foundation/openai_local_adapter.py",
+      "source_blob_sha1": "5fee71e6d84be6ddf022f8aee02dad57e7e76348",
+      "case_source": "experiments/strata_acceptance/dispatcher_nonstring.case",
+      "case_blob_sha1": "5ea51568476f3a8e209f41f961fbbfd92d29761f",
+      "test": "tests/test_strata_dispatcher_binding.py",
+      "instruction": "In src/ai_foundation/openai_local_adapter.py, make LocalExecutionDispatcher.for_binding return its default execution when binding is not a str (for example None, False, 0, list, or dict), without changing prefix matching for string bindings. Preserve all other public behavior and interfaces. Return the complete replacement Python file."
+    }
+  ]
+}

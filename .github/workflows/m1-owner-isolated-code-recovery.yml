@@ -1,0 +1,31 @@
+name: Foundation M1 owner isolated CODE recovery
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: foundation-m1-owner-isolated-code-recovery
+  cancel-in-progress: false
+jobs:
+  recover:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      startsWith(github.event.issue.title, 'Foundation M1 CODE Recovery: ')
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Recover fixed absent CODE workload through owner Guard
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: src:.
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: /opt/homebrew/bin/python3.12 -B scripts/m1_owner_toolhive_code_repair.py

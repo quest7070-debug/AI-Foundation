@@ -1,0 +1,72 @@
+name: Foundation M1 KLM nonworker release static acceptance
+
+on:
+  push:
+    branches: [ops/klm-nonworker-release-20261110]
+    paths:
+      - '.github/workflows/m1-klm-nonworker-static-accept.yml'
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  no-model-release-identity:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.head_commit.message == 'test(m1): static verify KLM nonworker release'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 2
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: 492a6e18a2c500543d3e2a1ea1afc7b8ed4ffd58
+          persist-credentials: false
+      - name: Check fixed controller, immutable source and owner Issue without effects
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 492a6e18a2c500543d3e2a1ea1afc7b8ed4ffd58
+          /opt/homebrew/bin/python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          from urllib import request
+          from scripts import m1_klm_nonworker_release as r
+          assert r.OLD == "82b79daee075f371794fe9f1e29ce74280da8cab"
+          assert r.NEW == "398592a317afc18dad7b1e55c3458324bb15889c"
+          assert r.OLD_ENTRY_BLOB == r.NEW_ENTRY_BLOB
+          assert r.OLD_HANDLER == r.NEW_HANDLER
+          assert r.blob(Path("scripts/klm_drive_host_tick.py").read_bytes()) == r.NEW_ENTRY_BLOB
+          assert r.blob(Path("src/ai_foundation/klm_drive_work.py").read_bytes()) == "4d53c54f620393af5357757c93420de722ed5d45"
+          ev = {"repository":{"full_name":r.REPO},
+                "ref":"refs/heads/ops/klm-nonworker-release-20261110",
+                "head_commit":{"message":"test(m1): apply pinned KLM non-worker parent release"}}
+          assert r.validate_issue(ev)==587
+          for wrong in ("other", None):
+              try:
+                  r.validate_issue({**ev, "head_commit":{"message":wrong}})
+              except r.Denied:
+                  pass
+              else:
+                  raise ValueError("ISSUE_EVENT_ADMISSION_TOO_BROAD")
+          class NoRedirect(request.HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs): return None
+          req=request.Request("https://api.github.com/repos/quest7070-dev/AI-Foundation/issues/587",
+              headers={"Authorization":"Bearer "+os.environ["GITHUB_TOKEN"],
+                       "Accept":"application/vnd.github+json"})
+          opener=request.build_opener(request.ProxyHandler({}),NoRedirect())
+          with opener.open(req,timeout=10) as response:
+              issue=json.loads(response.read(65537))
+          if (issue.get("title")!=r.TITLE or issue.get("body")!=r.BODY
+                  or issue.get("state")!="open"
+                  or issue.get("user",{}).get("login")!=r.OWNER):
+              raise ValueError("OWNER_RELEASE_ISSUE_UNVERIFIED")
+          print("KLM_PINNED_RELEASE_CONTRACT=VERIFIED")
+          print("KLM_OWNER_ISSUE_EXACT=VERIFIED")
+          print("MODEL_CALLS=0")
+          print("COMPUTE_LEASE=NOT_REQUESTED")
+          print("PRODUCTION_WRITES=0")
+          PY

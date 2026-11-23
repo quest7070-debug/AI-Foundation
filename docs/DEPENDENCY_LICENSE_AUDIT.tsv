@@ -1,0 +1,159 @@
+name	version	license_expression	legacy_license	license_classifiers	status
+ai-foundation	0.1.0				unresolved
+aiohappyeyeballs	2.7.1		PSF-2.0	License :: OSI Approved :: Python Software Foundation License	resolved
+aiohttp	3.14.3		Apache-2.0 AND MIT		resolved
+aiosignal	1.4.0		Apache 2.0	License :: OSI Approved :: Apache Software License	resolved
+annotated-types	0.8.0	MIT		License :: OSI Approved :: MIT License	resolved
+anyio	4.15.1	MIT			resolved
+attrs	26.1.0	MIT			resolved
+certifi	2026.7.22		MPL-2.0	License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)	resolved
+cffi	2.1.1	MIT-0			resolved
+charset-normalizer	3.5.1		MIT		resolved
+cryptography	50.0.1	Apache-2.0 OR BSD-3-Clause			resolved
+frozenlist	1.8.0		Apache-2.0		resolved
+genai-prices	0.1.9	MIT		License :: OSI Approved :: MIT License	resolved
+googleapis-common-protos	1.75.4	Apache-2.0			resolved
+griffelib	2.3.0	ISC			resolved
+grpcio	1.84.0	Apache-2.0			resolved
+grpcio-status	1.84.0	Apache-2.0			resolved
+grpcio-tools	1.81.1	Apache-2.0			resolved
+h11	0.16.0		MIT	License :: OSI Approved :: MIT License	resolved
+hatchet-sdk	1.41.1		MIT		resolved
+http_ece	1.2.1		MIT	License :: OSI Approved :: MIT License	resolved
+httpcore2	2.13.1	BSD-3-Clause		License :: OSI Approved :: BSD License	resolved
+httpx2	2.13.1	BSD-3-Clause		License :: OSI Approved :: BSD License	resolved
+idna	3.20	BSD-3-Clause			resolved
+iniconfig	2.3.0	MIT			resolved
+libcst	1.9.0		"All contributions towards LibCST are MIT licensed.
+
+Some Python files have been derived from the standard library and are therefore
+PSF licensed. Modifications on these files are dual licensed (both MIT and
+PSF). These files are:
+
+- libcst/_parser/base_parser.py
+- libcst/_parser/parso/utils.py
+- libcst/_parser/parso/pgen2/generator.py
+- libcst/_parser/parso/pgen2/grammar_parser.py
+- libcst/_parser/parso/python/py_token.py
+- libcst/_parser/parso/python/tokenize.py
+- libcst/_parser/parso/tests/test_fstring.py
+- libcst/_parser/parso/tests/test_tokenize.py
+- libcst/_parser/parso/tests/test_utils.py
+- native/libcst/src/tokenizer/core/mod.rs
+- native/libcst/src/tokenizer/core/string_types.rs
+
+Some Python files have been taken from dataclasses and are therefore Apache
+licensed. Modifications on these files are licensed under Apache 2.0 license.
+These files are:
+
+- libcst/_add_slots.py
+
+-------------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the ""Software""), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED ""AS IS"", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+
+PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
+
+1. This LICENSE AGREEMENT is between the Python Software Foundation
+(""PSF""), and the Individual or Organization (""Licensee"") accessing and
+otherwise using this software (""Python"") in source or binary form and
+its associated documentation.
+
+2. Subject to the terms and conditions of this License Agreement, PSF hereby
+grants Licensee a nonexclusive, royalty-free, world-wide license to reproduce,
+analyze, test, perform and/or display publicly, prepare derivative works,
+distribute, and otherwise use Python alone or in any derivative version,
+provided, however, that PSF's License Agreement and PSF's notice of copyright,
+i.e., ""Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
+2011, 2012, 2013, 2014, 2015 Python Software Foundation; All Rights Reserved""
+are retained in Python alone or in any derivative version prepared by Licensee.
+
+3. In the event Licensee prepares a derivative work that is based on
+or incorporates Python or any part thereof, and wants to make
+the derivative work available to others as provided herein, then
+Licensee hereby agrees to include in any such work a brief summary of
+the changes made to Python.
+
+4. PSF is making Python available to Licensee on an ""AS IS""
+basis.  PSF MAKES NO REPRESENTATIONS OR WARRANTIES, EXPRESS OR
+IMPLIED.  BY WAY OF EXAMPLE, BUT NOT LIMITATION, PSF MAKES NO AND
+DISCLAIMS ANY REPRESENTATION OR WARRANTY OF MERCHANTABILITY OR FITNESS
+FOR ANY PARTICULAR PURPOSE OR THAT THE USE OF PYTHON WILL NOT
+INFRINGE ANY THIRD PARTY RIGHTS.
+
+5. PSF SHALL NOT BE LIABLE TO LICENSEE OR ANY OTHER USERS OF PYTHON
+FOR ANY INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES OR LOSS AS
+A RESULT OF MODIFYING, DISTRIBUTING, OR OTHERWISE USING PYTHON,
+OR ANY DERIVATIVE THEREOF, EVEN IF ADVISED OF THE POSSIBILITY THEREOF.
+
+6. This License Agreement will automatically terminate upon a material
+breach of its terms and conditions.
+
+7. Nothing in this License Agreement shall be deemed to create any
+relationship of agency, partnership, or joint venture between PSF and
+Licensee.  This License Agreement does not grant permission to use PSF
+trademarks or trade name in a trademark sense to endorse or promote
+products or services of Licensee, or any third party.
+
+8. By copying, installing or otherwise using Python, Licensee
+agrees to be bound by the terms and conditions of this License
+Agreement.
+
+-------------------------------------------------------------------------------
+
+APACHE LICENSE, VERSION 2.0
+
+http://www.apache.org/licenses/LICENSE-2.0
+"	License :: OSI Approved :: MIT License	resolved
+logfire-api	5.1.1	MIT			resolved
+multidict	6.9.1		Apache License 2.0		resolved
+opentelemetry-api	1.44.0	Apache-2.0			resolved
+packaging	26.3	Apache-2.0 OR BSD-2-Clause			resolved
+pluggy	1.6.0		MIT	License :: OSI Approved :: MIT License	resolved
+prometheus_client	0.26.0	Apache-2.0 AND BSD-2-Clause			resolved
+propcache	0.5.4		Apache-2.0		resolved
+protobuf	6.33.6		3-Clause BSD License		resolved
+py-vapid	1.9.4		MPL-2.0		resolved
+pycparser	3.0	BSD-3-Clause			resolved
+pydantic	2.13.5	MIT			resolved
+pydantic-ai-slim	2.47.0	MIT		License :: OSI Approved :: MIT License	resolved
+pydantic-graph	2.47.0	MIT		License :: OSI Approved :: MIT License	resolved
+pydantic-settings	2.15.0	MIT		License :: OSI Approved :: MIT License	resolved
+pydantic_core	2.46.5	MIT			resolved
+Pygments	2.21.0	BSD-2-Clause			resolved
+pytest	9.1.1	MIT			resolved
+python-dateutil	2.9.0.post0		Dual License	License :: OSI Approved :: BSD License; License :: OSI Approved :: Apache Software License	resolved
+python-dotenv	1.2.3		BSD-3-Clause		resolved
+pywebpush	2.5.0	MPL-2.0			resolved
+PyYAML	6.0.3		MIT	License :: OSI Approved :: MIT License	resolved
+requests	2.34.2		Apache-2.0	License :: OSI Approved :: Apache Software License	resolved
+setuptools	84.0.0	MIT			resolved
+six	1.17.0		MIT	License :: OSI Approved :: MIT License	resolved
+tenacity	9.1.4		Apache 2.0	License :: OSI Approved :: Apache Software License	resolved
+truststore	0.10.4	MIT			resolved
+typing-inspection	0.4.4	MIT			resolved
+typing_extensions	4.16.0	PSF-2.0			resolved
+urllib3	2.8.0	MIT			resolved
+yarl	1.25.1		Apache-2.0		resolved

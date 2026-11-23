@@ -1,0 +1,95 @@
+name: Foundation M1 Strata reviewed local CODE ticket
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: foundation-m1-strata-reviewed-local-ticket
+  cancel-in-progress: false
+jobs:
+  owner-e2e:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      ((github.event.issue.title == 'Foundation M1 Strata reviewed local CODE ticket r3' &&
+        github.event.issue.body == '<!-- foundation-strata-reviewed-local:20261114:r3 -->') ||
+       (github.event.issue.title == format('Foundation M1 reviewed ticket admission: {0}', github.sha) &&
+        github.event.issue.body == format('<!-- foundation-reviewed-ticket-admission:v1:{0} -->', github.sha)))
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Owner-reviewed test on M1 with MainPC Strata CODE inference, no GitHub edit loop
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import json, os, subprocess, urllib.request
+          from pathlib import Path
+          repo='quest7070-dev/AI-Foundation'
+          event_path=Path(os.environ['GITHUB_EVENT_PATH'])
+          evt=json.loads(event_path.read_text())
+          admission=evt['issue'].get('title','').startswith('Foundation M1 reviewed ticket admission: ')
+          title=('Foundation M1 reviewed ticket admission: '+os.environ['GITHUB_SHA'] if admission
+                 else 'Foundation M1 Strata reviewed local CODE ticket r3')
+          body=('<!-- foundation-reviewed-ticket-admission:v1:'+os.environ['GITHUB_SHA']+' -->' if admission
+                else '<!-- foundation-strata-reviewed-local:20261114:r3 -->')
+          issue=evt['issue']
+          assert evt.get('repository',{}).get('full_name')==repo
+          assert evt.get('action')=='opened'
+          assert evt.get('sender',{}).get('login')=='quest7070-debug'
+          assert os.environ['GITHUB_ACTOR']=='quest7070-debug'
+          assert issue['user']['login']=='quest7070-debug'
+          assert issue['state']=='open' and issue['title']==title and issue['body']==body
+          head=subprocess.run(['/usr/bin/git','rev-parse','HEAD'],capture_output=True,text=True,timeout=8)
+          assert head.returncode==0 and head.stdout.strip()==os.environ['GITHUB_SHA']
+          origin='https://api.github.com/repos/'+repo+'/issues/'+str(issue['number'])
+          headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],
+                   'Accept':'application/vnd.github+json','User-Agent':'foundation-strata-r3-owner'}
+          def api(url, payload=None):
+              request=urllib.request.Request(url,headers=headers,
+                  data=json.dumps(payload).encode() if payload is not None else None)
+              with urllib.request.urlopen(request,timeout=20) as response:
+                  return json.loads(response.read(262144))
+          live=api(origin)
+          assert live['state']=='open' and live['user']['login']=='quest7070-debug'
+          assert live['title']==title and live['body']==body
+          marker='<!-- foundation-strata-reviewed-local-receipt:v1:'+str(issue['number'])+' -->'
+          comments=api(origin+'/comments?per_page=100')
+          assert len(comments)<100
+          if any(c['user']['login']=='github-actions[bot]' and marker in c['body'] for c in comments):
+              raise SystemExit('RECEIPT_EXISTS_NO_MODEL_REPLAY')
+          owner_python=Path.home()/'Develop/AI-Foundation/.venv/bin/python'
+          env={k:v for k,v in os.environ.items()
+               if k in {'HOME','PATH','USER','TMPDIR','LANG','LC_ALL','STRATA_API_KEY'}}
+          child=subprocess.run([str(owner_python),'-B',
+              'scripts/m1_reviewed_strata_ticket.py','install' if admission else 'install-run'],
+              capture_output=True,text=True,timeout=800,env=env)
+          try:
+              observed=json.loads(child.stdout)
+          except (ValueError,TypeError):
+              observed={'status':'LOCAL_EXECUTION_UNVERIFIED'}
+          allowed={'status','revision','ticket_id','ticket_count','added','model_calls',
+                   'github_in_run_loop','durable_readback_matches','replay_readonly',
+                   'cloud_chatgpt_muse_connection_verified','error_type','reason_code','phase','strata_available'}
+          report={k:v for k,v in observed.items() if k in allowed
+                  and type(v) in (str,int,bool,type(None))}
+          ticket=observed.get('ticket')
+          if type(ticket) is dict:
+              report['ticket']={k:v for k,v in ticket.items()
+                  if k in {'state','source_sha256','execution_binding'} and type(v) is str}
+          api(origin+'/comments',{'body':marker+'\n~~~json\n'+
+              json.dumps(report,sort_keys=True,indent=2)+'\n~~~'})
+          print(json.dumps(report,sort_keys=True))
+          expected='REVIEWED_TICKETS_INSTALLED' if admission else 'MCP_CODE_VERIFIED'
+          if report.get('status')!=expected or child.returncode!=0:
+              raise SystemExit(2)
+          PY

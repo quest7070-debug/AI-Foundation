@@ -1,0 +1,45 @@
+name: Foundation M1 KLM LLMPerks research reader release
+
+on:
+  push:
+    branches:
+      - feat/klm-llmperks-research-intake-minimal-20261110
+    paths:
+      - '.github/workflows/m1-klm-llmperks-research-release.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-m1-klm-only-pinned-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.ref == 'refs/heads/feat/klm-llmperks-research-intake-minimal-20261110' &&
+      github.event.head_commit.message == 'test(m1): apply pinned KLM research reader with rollback'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 7
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check exact event SHA and run approved owner-only pinned release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          /opt/homebrew/bin/python3 -B scripts/m1_klm_research_release.py
+
+# Owner-approved one-time pinned release request: issue 564, never generic dispatch.
+
+# Retry the fixed source-only release after ModuleNotFoundError root cause repair.

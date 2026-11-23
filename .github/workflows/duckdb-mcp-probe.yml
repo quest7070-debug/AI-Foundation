@@ -1,0 +1,316 @@
+name: DuckDB MCP Probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-foundation-duckdb-mcp-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: P4 pinned DuckDB DATA boundary
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 15
+    env:
+      UPSTREAM_REPO: https://github.com/nkrimmel/mcp-duckdb-analyst.git
+      UPSTREAM_COMMIT: 31f2b9232fd4ad5f82f2ac7ff6ec99e36cc8d8c8
+    steps:
+      - name: Checkout Foundation
+        uses: actions/checkout@v4
+
+      - name: Prepare exact upstream source and fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/ai-foundation-duckdb-p4"
+          rm -rf "$root"
+          mkdir -p "$root/data"
+          git clone --filter=blob:none --no-checkout "$UPSTREAM_REPO" "$root/upstream"
+          git -C "$root/upstream" fetch --depth=1 origin "$UPSTREAM_COMMIT"
+          git -C "$root/upstream" checkout --detach "$UPSTREAM_COMMIT"
+          test "$(git -C "$root/upstream" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
+          test -f "$root/upstream/uv.lock"
+          cat > "$root/data/sales.csv" <<'CSV'
+          id,region,amount
+          1,north,10
+          2,south,20
+          3,north,30
+          4,west,40
+          CSV
+          printf 'P4_HOST_SENTINEL_DO_NOT_READ\n' > "$root/host-sentinel.txt"
+          echo "P4_PINNED_SOURCE_OK"
+
+      - name: Install exact locked upstream environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/ai-foundation-duckdb-p4"
+          cd "$root/upstream"
+          # Keep dependency resolution owned by the upstream lock. The self-hosted
+          # runner is not required to preinstall uv; use the same pinned installer
+          # action pattern as upstream CI instead of adding Foundation bootstrap code.
+          echo "P4_UPSTREAM_LOCK_PRESENT_OK"
+
+      - name: Install uv for pinned upstream lock
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Materialize exact locked upstream environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/ai-foundation-duckdb-p4"
+          cd "$root/upstream"
+          uv sync --frozen
+          uv run --frozen mcp-duckdb-analyst --help >/dev/null
+          echo "P4_LOCKED_ENV_OK"
+
+      - name: Probe upstream domain boundary independently
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/ai-foundation-duckdb-p4"
+          cd "$root/upstream"
+          export P4_DATA_ROOT="$root/data"
+          export P4_HOST_SENTINEL="$root/host-sentinel.txt"
+          cat > "$root/probe.py" <<'PY'
+          import os
+          from pathlib import Path
+
+          from mcp_duckdb_analyst import Engine, ServerConfig
+          from mcp_duckdb_analyst.errors import AnalystError
+          from mcp_duckdb_analyst.server import build_server
+
+          data = Path(os.environ["P4_DATA_ROOT"]).resolve()
+          sentinel = Path(os.environ["P4_HOST_SENTINEL"]).resolve()
+          cfg = ServerConfig(
+              data_dir=data,
+              max_rows=2,
+              max_cells=20,
+              timeout_s=0.05,
+              allow_extensions=False,
+              allow_saved_queries=False,
+          )
+          engine = Engine(cfg)
+
+          rows = engine.query(
+              "SELECT region, sum(amount) AS total FROM sales GROUP BY region ORDER BY region"
+          )
+          assert rows.row_count == 2 and rows.truncated is True, rows
+          print("P4_SELECT_AND_ROW_CAP_OK")
+
+          def denied(label, sql, expected=None):
+              try:
+                  engine.query(sql)
+              except AnalystError as exc:
+                  text = str(exc)
+                  if expected is not None:
+                      assert expected in text, (label, text)
+                  print(f"P4_DENIED_OK:{label}")
+              else:
+                  raise SystemExit(f"P4_FORBIDDEN_QUERY_ALLOWED:{label}")
+
+          denied("multi_statement", "SELECT 1; SELECT 2")
+          denied("copy", "COPY sales TO '/tmp/p4-copy.csv'", "COPY")
+          denied("attach", "ATTACH '/tmp/p4.duckdb' AS other", "ATTACH")
+          denied("install", "INSTALL httpfs", "INSTALL")
+          denied("load", "LOAD httpfs", "LOAD")
+          denied("pragma", "PRAGMA version", "PRAGMA")
+          denied("set", "SET enable_external_access=true", "SET")
+          denied("path_escape", f"SELECT * FROM read_csv('{sentinel.as_posix()}')", "outside")
+          denied("remote_http", "SELECT * FROM read_csv('https://example.com/x.csv')", "Remote")
+
+          try:
+              engine.query(
+                  "WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM t WHERE x < 100000000) "
+                  "SELECT sum(x) FROM t"
+              )
+          except AnalystError as exc:
+              assert "timeout" in str(exc).lower(), str(exc)
+              print("P4_TIMEOUT_BOUNDED_OK")
+          else:
+              raise SystemExit("P4_TIMEOUT_NOT_ENFORCED")
+
+          assert not cfg.allow_extensions
+          assert not cfg.allow_saved_queries
+          server = build_server(cfg, engine=engine)
+          # Upstream registration is conditional; inspect the server's tool manager rather
+          # than inventing a Foundation-side SQL/tool policy.
+          manager = getattr(server, "_tool_manager", None)
+          tools = getattr(manager, "_tools", {}) if manager is not None else {}
+          names = set(tools.keys())
+          if names:
+              assert "save_query" not in names and "list_saved_queries" not in names, names
+          print("P4_OPT_IN_WRITES_DISABLED_OK")
+          print("P4_UPSTREAM_ADVERSARIAL_OK")
+          PY
+          uv run --frozen python "$root/probe.py"
+
+      - name: Probe real MCP stdio contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/ai-foundation-duckdb-p4"
+          cd "$root/upstream"
+          export P4_DATA_ROOT="$root/data"
+          cat > "$root/mcp_probe.py" <<'PY'
+          import asyncio
+          import os
+          from mcp import ClientSession, StdioServerParameters
+          from mcp.client.stdio import stdio_client
+
+          async def main():
+              params = StdioServerParameters(
+                  command="uv",
+                  args=[
+                      "run", "--frozen", "mcp-duckdb-analyst",
+                      "--data", os.environ["P4_DATA_ROOT"],
+                      "--max-rows", "2",
+                      "--max-cells", "20",
+                      "--timeout-s", "1",
+                  ],
+              )
+              async with stdio_client(params) as (read, write):
+                  async with ClientSession(read, write) as session:
+                      await session.initialize()
+                      result = await session.list_tools()
+                      names = {t.name for t in result.tools}
+                      required = {
+                          "list_tables", "describe_table", "profile_table", "sample_rows",
+                          "query", "explain_query", "search_columns", "table_relationships",
+                      }
+                      assert required <= names, names
+                      assert "save_query" not in names and "list_saved_queries" not in names, names
+                      ok = await session.call_tool("query", {"sql": "SELECT count(*) AS n FROM sales"})
+                      assert not ok.is_error, ok
+                      bad = await session.call_tool("query", {"sql": "COPY sales TO '/tmp/no.csv'"})
+                      assert bad.is_error, bad
+                      print("P4_MCP_LIVE_CONTRACT_OK")
+                      print("P4_MCP_EFFECT_DENIAL_OK")
+
+          asyncio.run(main())
+          PY
+          uv run --frozen python "$root/mcp_probe.py"
+
+
+      - name: Provision canonical ToolHive
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh ./scripts/bootstrap-toolhive.sh
+          thv="$GITHUB_WORKSPACE/.tools/toolhive/thv"
+          echo "TOOLHIVE_BIN=$thv" >> "$GITHUB_ENV"
+          "$thv" version
+
+      - name: Probe Foundation composed DATA production path
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/ai-foundation-duckdb-p4"
+          server="ai-foundation-duckdb-data-probe"
+          image="ai-foundation/duckdb-analyst:$UPSTREAM_COMMIT"
+          cleanup() { "$TOOLHIVE_BIN" rm "$server" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          cleanup
+
+          cat > "$root/upstream/Dockerfile.p4" <<'DOCKER'
+          FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+          WORKDIR /app
+          COPY pyproject.toml uv.lock README.md LICENSE ./
+          COPY src ./src
+          RUN uv sync --frozen --no-dev
+          ENTRYPOINT ["uv","run","--frozen","mcp-duckdb-analyst"]
+          DOCKER
+          docker build --pull -f "$root/upstream/Dockerfile.p4" -t "$image" "$root/upstream"
+
+          # ToolHive owns generic transport/containment. The reviewed upstream owns
+          # SQL policy; Foundation only supplies the host-selected data root and grant.
+          "$TOOLHIVE_BIN" run --transport stdio --proxy-mode streamable-http \
+            --name "$server" --image-verification warn \
+            --volume "$root/data:/data:ro" "$image" -- \
+            --data /data --max-rows 2 --max-cells 20 --timeout-s 1
+
+          ready=false
+          for _ in $(seq 1 60); do
+            if "$TOOLHIVE_BIN" mcp list --server "$server" --format json >/dev/null 2>&1; then
+              ready=true; break
+            fi
+            sleep 1
+          done
+          test "$ready" = true
+          echo "P4_DUCKDB_TOOLHIVE_STDIO_OK"
+
+          PYTHONPATH=src \
+          AI_FOUNDATION_TOOLHIVE_ROOT="$GITHUB_WORKSPACE" \
+          AI_FOUNDATION_DATA_SERVER="$server" \
+          /opt/homebrew/bin/python3.12 - <<'PY'
+          import json, tempfile
+          from pathlib import Path
+          from types import SimpleNamespace
+          from ai_foundation.capability_composition import build_capability_composition
+          from ai_foundation.capability_request import CapabilityRequest
+
+          c=build_capability_composition(
+              repo_base=Path.cwd(), data_root=Path(tempfile.mkdtemp()),
+              config=SimpleNamespace(toolhive_server="ai-foundation-fs"),
+              inference=None, guard=None, reconciliation_registry=None,
+              thv_path=Path(".tools/toolhive/thv"),
+          )
+          grant=c.executor.mcp_registry._grants["data-duckdb"]
+          assert "query" in grant.allowed_tools
+          assert "save_query" not in grant.allowed_tools
+          assert "execute_code" not in grant.allowed_tools
+
+          req=CapabilityRequest("DATA",data_backend="data-duckdb")
+          out=json.loads(c.executor.execute(req,json.dumps({
+              "tool":"query","args":{"sql":"SELECT count(*) AS n FROM sales"},
+          }),"data-e2e"))
+          assert "4" in json.dumps(out,ensure_ascii=False), out
+          print("P4_FOUNDATION_DUCKDB_QUERY_OK")
+
+          for tool,args in (
+              ("save_query",{}),
+              ("execute_code",{"code":"print(1)"}),
+          ):
+              try:
+                  c.executor.execute(req,json.dumps({"tool":tool,"args":args}),"forbidden-e2e")
+              except PermissionError:
+                  print("P4_DATA_DENIED_OK:"+tool)
+              else:
+                  raise AssertionError("forbidden DATA tool allowed: "+tool)
+
+          # Backend failure/absence cannot widen DATA into COMPUTE.
+          try:
+              c.executor.execute(
+                  CapabilityRequest("DATA",data_backend="missing"),
+                  json.dumps({"tool":"query","args":{"sql":"SELECT 1"}}),
+                  "missing-data-e2e",
+              )
+          except PermissionError:
+              print("P4_DATA_MISSING_BACKEND_FAIL_CLOSED")
+          else:
+              raise AssertionError("missing DATA backend did not fail closed")
+
+          # The deterministic baseline remains a separate path.
+          baseline=c.executor.execute(
+              CapabilityRequest("DATA",data_operation="json_summary"),
+              "[1,2,3]","baseline-e2e",
+          )
+          assert "'count': 3" in baseline
+          print("P4_DATA_BASELINE_PRESERVED")
+          print("P4_FOUNDATION_COMPOSED_DATA_E2E_OK")
+          PY
+          echo "P4_PRODUCTION_PATH_OK"
+
+      - name: Conclude production wiring gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "P4_REAL_HOST_PREWIRING_GATE_OK"
+          echo "P4_PRODUCTION_WIRING_GATE_OK"

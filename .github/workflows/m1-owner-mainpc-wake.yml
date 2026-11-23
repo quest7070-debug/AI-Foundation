@@ -1,0 +1,72 @@
+name: Foundation M1 owner MainPC wake
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: foundation-m1-owner-mainpc-wake
+  cancel-in-progress: false
+jobs:
+  wake:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      github.event.issue.title == format('Foundation M1 MainPC Wake: {0}', github.sha) &&
+      github.event.issue.body == format('<!-- foundation-mainpc-wake:v1:{0} -->', github.sha)
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Call the existing owner wake script once, with durable no-replay intent
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: src:.
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          from scripts.m1_development_bridge import _github_api, require_m1
+          from scripts.mainpc_strata_preflight import _wake_existing_owner_script
+          require_m1()
+          assert os.getuid() == os.geteuid() == 501
+          evt=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+          sha=os.environ['GITHUB_SHA']
+          issue=evt['issue']
+          repo='quest7070-dev/AI-Foundation'
+          owner='quest7070-debug'
+          title='Foundation M1 MainPC Wake: '+sha
+          body='<!-- foundation-mainpc-wake:v1:'+sha+' -->'
+          assert evt['action']=='opened' and evt['repository']['full_name']==repo
+          assert evt['sender']['login']==os.environ['GITHUB_ACTOR']==owner
+          assert issue['user']['login']==owner and issue['state']=='open'
+          assert issue['title']==title and issue['body']==body
+          head=subprocess.check_output(['/usr/bin/git','rev-parse','HEAD'],text=True).strip()
+          assert head==sha
+          token=os.environ['GITHUB_TOKEN']
+          prefix='/repos/'+repo+'/issues/'+str(issue['number'])
+          live=_github_api('GET',prefix,token)
+          assert live['state']=='open' and live['user']['login']==owner
+          assert live['title']==title and live['body']==body
+          marker='<!-- foundation-mainpc-wake-intent:v1:'+str(issue['number'])+' -->'
+          rows=_github_api('GET',prefix+'/comments?per_page=100',token)
+          assert type(rows) is list and len(rows)<100
+          if any(c.get('user',{}).get('login')=='github-actions[bot]' and marker in c.get('body','') for c in rows):
+              raise SystemExit('EXISTING_WAKE_INTENT_NO_REPLAY')
+          # Commit intent before the native effect. Missing final publication
+          # can never justify another wake request for this same Issue.
+          _github_api('POST',prefix+'/comments',token,{'body':marker})
+          sent=_wake_existing_owner_script(home=Path.home(),runner=subprocess.run)
+          result={'status':'WAKE_SENT' if sent else 'WAKE_UNAVAILABLE',
+                  'model_calls':0,'pc_awake_verified':False}
+          _github_api('POST',prefix+'/comments',token,
+                      {'body':'~~~json\n'+json.dumps(result,sort_keys=True)+'\n~~~'})
+          print(json.dumps(result,sort_keys=True))
+          raise SystemExit(0 if sent else 2)
+          PY

@@ -1,0 +1,57 @@
+name: M1 daily Operator HumanModel runtime
+on:
+  push:
+    branches: [feat/human-model-daily-runtime-20261103]
+    paths:
+      - scripts/m1_human_model_runtime.py
+      - scripts/human_model_operator_launcher.py
+      - scripts/human_model_gateway_launcher.py
+      - scripts/gateway_support.py
+      - src/ai_foundation/gateway_csrf.py
+      - src/ai_foundation/local_model_availability.py
+      - src/ai_foundation/llama_swap_adapter.py
+      - src/ai_foundation/human_model_runtime.py
+      - experiments/human_model/project_reference_sources.py
+      - scripts/m1_human_model_activation_readiness.py
+      - .github/workflows/m1-human-model-runtime.yml
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Verify the deployment or explicitly select a lifecycle operation
+        required: true
+        default: verify
+        type: choice
+        options: [verify, stage, activate, recover]
+permissions:
+  contents: read
+concurrency:
+  group: human-model-daily-runtime
+  cancel-in-progress: false
+jobs:
+  daily-operator-runtime:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify deployed daily HumanModel runtime
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONPATH: src
+          HUMAN_MODEL_OPERATION: "${{ inputs.operation || 'verify' }}"
+        run: |
+          set -uo pipefail
+          case "$HUMAN_MODEL_OPERATION" in
+            verify|stage|activate|recover) ;;
+            *) exit 2 ;;
+          esac
+          human_model_activation_status=0
+          human_model_readback_status=0
+          /opt/homebrew/bin/python3.12 -B scripts/m1_human_model_runtime.py "--${HUMAN_MODEL_OPERATION}" || human_model_activation_status=$?
+          /opt/homebrew/bin/python3.12 -B scripts/m1_human_model_runtime.py --diagnose || human_model_readback_status=$?
+          /opt/homebrew/bin/python3.12 -B scripts/m1_human_model_runtime.py --inspect || human_model_readback_status=$?
+          /opt/homebrew/bin/python3.12 -B scripts/m1_human_model_activation_readiness.py || human_model_readback_status=$?
+          if (( human_model_activation_status != 0 )); then
+            exit "$human_model_activation_status"
+          fi
+          exit "$human_model_readback_status"

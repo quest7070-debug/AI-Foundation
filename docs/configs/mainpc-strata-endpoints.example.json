@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "endpoints": [
+    {
+      "name": "mainpc-strata",
+      "base_url": "http://10.0.1.1:8080",
+      "allowed_hosts": [
+        "10.0.1.1"
+      ],
+      "api_key_env": "STRATA_API_KEY",
+      "discovery_timeout": 2,
+      "timeout": 300,
+      "request_defaults": {
+        "max_tokens": 4096
+      },
+      "models": [
+        {
+          "runtime_model": "qwen3.8-flash-next-coder-iq1_m",
+          "alias": "code-agent",
+          "capabilities": [
+            "CODE",
+            "CHAT"
+          ],
+          "roles": [
+            "DEVELOPMENT_AGENT",
+            "PUBLIC_TEXT_ANALYSIS",
+            "PUBLIC_SUMMARIZATION",
+            "PUBLIC_PLANNING"
+          ],
+          "characteristics": [
+            "text-only",
+            "context-32768"
+          ]
+        }
+      ],
+      "optional": true
+    }
+  ]
+}

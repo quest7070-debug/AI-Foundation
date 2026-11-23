@@ -1,0 +1,80 @@
+name: Foundation M1 Strata verified Draft delivery
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: foundation-strata-r2-draft-delivery
+  cancel-in-progress: false
+jobs:
+  deliver:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      github.event.issue.title == 'Foundation M1 Strata r2 verified Draft delivery' &&
+      github.event.issue.body == '<!-- foundation-strata-r2-deliver:20261114:v1:75da93dd064a49590fb41644b97c6e0fb8170c6076c995737b500d7baf99a3fc -->'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      # GitHub Actions token writes only the sanitized Issue receipt. Owner's
+      # existing authenticated gh/SSH context must author the Draft PR, so
+      # normal owner PR CI remains eligible; never publish as actions[bot].
+      - name: Verify fixed owner request and publish only already verified r2 source as Draft
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import json,os,subprocess,urllib.request
+          from pathlib import Path
+          event=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+          issue=event['issue']
+          base='https://api.github.com/repos/quest7070-dev/AI-Foundation/issues/'+str(issue['number'])
+          headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'Accept':'application/vnd.github+json'}
+          def api(url,body=None):
+              req=urllib.request.Request(url,headers=headers,data=None if body is None else json.dumps(body).encode())
+              with urllib.request.urlopen(req,timeout=15) as response:
+                  return json.loads(response.read(262144))
+          live=api(base)
+          exact='<!-- foundation-strata-r2-deliver:20261114:v1:75da93dd064a49590fb41644b97c6e0fb8170c6076c995737b500d7baf99a3fc -->'
+          assert live['state']=='open' and live['user']['login']=='quest7070-debug'
+          assert live['title']==issue['title']=='Foundation M1 Strata r2 verified Draft delivery'
+          assert live['body']==issue['body']==exact
+          marker='<!-- foundation-strata-r2-delivery-receipt:v1:'+str(issue['number'])+' -->'
+          comments=api(base+'/comments?per_page=100')
+          assert len(comments)<100
+          if any(c['user']['login']=='github-actions[bot]' and marker in c['body'] for c in comments):
+              raise SystemExit('ALREADY_RECORDED')
+          py=Path.home()/'Develop/AI-Foundation/.venv/bin/python'
+          installed=subprocess.run([str(py),'-B','scripts/m1_direct_development.py','install'],
+                                  capture_output=True,text=True,timeout=150)
+          try:
+              installation=json.loads(installed.stdout)
+          except ValueError:
+              installation={'status':'INSTALL_UNVERIFIED'}
+          observed={'status':'DRAFT_DELIVERY_NOT_STARTED','model_calls':0}
+          if installed.returncode==0 and installation.get('status')=='DIRECT_DEVELOPMENT_INSTALLED':
+              env={k:v for k,v in os.environ.items()
+                   if k in {'PATH','HOME','USER','TMPDIR','LANG','LC_ALL'}}
+              published=subprocess.run([str(Path.home()/'foundation'),'deliver'],
+                                       capture_output=True,text=True,timeout=480,env=env)
+              try:
+                  observed=json.loads(published.stdout)
+              except ValueError:
+                  observed={'status':'DRAFT_DELIVERY_UNVERIFIED','model_calls':0}
+          allowed={'status','ticket_id','source_sha256','draft_pr_url','github_published',
+                   'durable_readback_matches','replay_readonly','model_calls','error_type'}
+          receipt={key:value for key,value in observed.items()
+                   if key in allowed and not isinstance(value,(dict,list))}
+          api(base+'/comments',{'body':marker+'\n```json\n'+json.dumps(receipt,sort_keys=True,indent=2)+'\n```'})
+          print(json.dumps(receipt,sort_keys=True))
+          if receipt.get('status')!='DRAFT_DELIVERY_VERIFIED':
+              raise SystemExit(2)
+          PY

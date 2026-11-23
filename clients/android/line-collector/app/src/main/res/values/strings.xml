@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="line_screen_disclosure">LINEが画面に表示されている間、表示テキスト候補を端末内に記録します。個人会話を含み、送信確定の証拠にはなりません。本人の明示同意でのみ動作します。</string>
+</resources>

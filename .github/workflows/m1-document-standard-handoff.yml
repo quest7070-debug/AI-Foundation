@@ -1,0 +1,44 @@
+name: M1 LibreChat standard document handoff
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - scripts/m1_librechat_document_probe.py
+      - src/ai_foundation/librechat_attachment_lookup.py
+      - src/ai_foundation/librechat_mongo_lookup.py
+      - .github/workflows/m1-document-standard-handoff.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: standard-document-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synthetic-standard-parser:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.user.login == 'quest7070-debug')
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+      - name: Existing local parser to owner-scoped Foundation FILES
+        shell: bash
+        env:
+          PYTHONPATH: src
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          for candidate in /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3; do
+            if [[ -x "$candidate" ]] && "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,12) else 1)'; then
+              "$candidate" -B scripts/m1_librechat_document_probe.py
+              exit 0
+            fi
+          done
+          echo 'Supported host Python unavailable'
+          exit 2

@@ -1,0 +1,32 @@
+name: Foundation M1 Strata public text activation
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: foundation-m1-strata-public-text-activate
+  cancel-in-progress: false
+jobs:
+  activate:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      (startsWith(github.event.issue.title, 'Foundation M1 Strata Text Activate: ') ||
+       startsWith(github.event.issue.title, 'Foundation M1 Strata Text Verify: '))
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 4
+    steps:
+      - name: Checkout immutable owner Issue-time main (no runner Git credentials)
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Exact-owner setup or one bounded synthetic public CHAT readback (no service change)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: src:.
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: /opt/homebrew/bin/python3.12 -B scripts/m1_strata_text_owner_activation.py

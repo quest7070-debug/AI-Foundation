@@ -1,0 +1,85 @@
+name: Foundation M1 KLM LLMPerks source-specific receipt readback
+
+on:
+  push:
+    branches: [ops/klm-nonworker-release-20261110]
+    paths:
+      - '.github/workflows/m1-klm-llmperks-work-receipt.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  readonly-current-source:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.head_commit.message == 'test(m1): read installed KLM source receipt 587'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: c05d04c70344ccb8ab0fd33284e9c98db062b67e
+          persist-credentials: false
+      - name: Independently check installed LaunchAgent source, Work status, no secrets
+        shell: bash
+        env:
+          PYTHONPATH: src:.
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = c05d04c70344ccb8ab0fd33284e9c98db062b67e
+          /opt/homebrew/bin/python3 -B - <<'PY'
+          import json,sqlite3,plistlib,stat,os
+          from pathlib import Path
+          from scripts.m1_klm_status_probe import _fixed_service_paths,_json_owner,MAX_CONFIG,LABEL
+          from scripts.klm_drive_host_tick import existing_work_db
+          report,cfg_path=_fixed_service_paths(Path.home())
+          cfg,_=_json_owner(cfg_path,MAX_CONFIG)
+          sha="398592a317afc18dad7b1e55c3458324bb15889c"
+          plist=Path.home()/"Library/LaunchAgents"/(LABEL+".plist")
+          pinfo=plist.lstat()
+          if not stat.S_ISREG(pinfo.st_mode) or pinfo.st_uid!=os.getuid():
+              raise PermissionError("SERVICE_IDENTITY_UNVERIFIED")
+          service=plistlib.loads(plist.read_bytes())
+          args=service.get("ProgramArguments",[])
+          if (service.get("StartInterval")!=900 or
+                  sum("/releases/"+sha+"/scripts/klm_drive_host_tick.py" in v
+                      for v in args if isinstance(v,str))!=1 or
+                  sha not in service.get("EnvironmentVariables",{}).get("PYTHONPATH","")):
+              raise ValueError("KLM_ACTIVE_SHA_NOT_UPDATED")
+          if "12pjkEhIhG1hexxcCgGbQ7dTrOs_ABCOb" not in cfg["roots"]:
+              raise ValueError("KLM_RESEARCH_ROOT_NOT_BOUND")
+          foundation=Path(cfg["foundation_root"])
+          settings=json.loads((foundation/"config.json").read_text())
+          db_path=existing_work_db(settings,foundation)
+          conn=sqlite3.connect("file:"+str(db_path)+"?mode=ro",uri=True,timeout=3)
+          try:
+              rows=conn.execute("""
+                  SELECT w.status,w.result,i.source_revision
+                  FROM klm_drive_intake i
+                  JOIN work_steps w ON i.job_id=w.job_id
+                  WHERE i.source_id='llmperks-owner-research'
+                    AND w.name='klm-readonly'
+                  ORDER BY i.created DESC LIMIT 20
+                  """).fetchall()
+              counts={}
+              verified=0
+              for state,result,revision in rows:
+                  counts[state]=counts.get(state,0)+1
+                  if state=="VERIFIED":
+                      body=json.loads(result)
+                      if (body.get("execution_authority") is False and
+                          isinstance(body.get("result_ref"),str) and
+                          body["result_ref"].startswith("klm-atoms-sha256:") and
+                          body.get("source_revision")==revision):
+                          verified+=1
+              print("KLM_ACTIVE_RELEASE_SHA=398592a317afc18dad7b1e55c3458324bb15889c")
+              print("KLM_RESEARCH_WORK_TOTAL="+str(len(rows)))
+              print("KLM_RESEARCH_WORK_STATES="+json.dumps(counts,sort_keys=True))
+              print("KLM_RESEARCH_SEMANTIC_VERIFIED="+str(verified))
+              print("PRODUCTION_DB_WRITES=0")
+              print("MODEL_CALLS=0")
+          finally:
+              conn.close()
+          PY

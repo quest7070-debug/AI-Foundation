@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "images": {
+    "ai-foundation-hatchet-lite": {
+      "owner": "Hatchet/Foundation isolated runtime",
+      "reference": "ghcr.io/hatchet-dev/hatchet/hatchet-lite@sha256:db8fb8e009a5c892859e52e4aa50b17aa11ab1dd23801cd320492f2942db30d7",
+      "image_id": "sha256:db8fb8e009a5c892859e52e4aa50b17aa11ab1dd23801cd320492f2942db30d7",
+      "mount": "/config"
+    },
+    "ai-foundation-hatchet-pg": {
+      "owner": "Hatchet/Foundation isolated runtime",
+      "reference": "postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "image_id": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "mount": "/var/lib/postgresql/data"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+name: Human-model M1 external ledger initialization
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  initialize:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Initialize only a new external USB SQLite ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/human_model_ledger_init.py

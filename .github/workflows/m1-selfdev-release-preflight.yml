@@ -1,0 +1,1326 @@
+name: Foundation M1 self-development preflight and inert source stage
+
+# Read-only observation followed by an immutable source-only worktree.\n# Never switches a running service or grants execution authority.
+on:
+  pull_request:
+    types: [synchronize]
+    paths:
+      - "src/ai_foundation/operator.py"
+      - "src/ai_foundation/operator_server.py"
+      - "src/ai_foundation/operator_mcp_tools.py"
+      - "tests/test_operator_server.py"
+      - "tests/test_operator_development_state.py"
+      - "tests/test_operator_mcp_tools.py"
+      - "scripts/m1_selfdev_release_preflight.py"
+      - "tests/test_m1_selfdev_release_preflight.py"
+      - ".github/workflows/m1-selfdev-release-preflight.yml"
+      - "src/ai_foundation/migration.py"
+      - "docs/END_GOAL.md"
+      - "src/ai_foundation/release_gate.py"
+      - "scripts/m1_operator_release_host.py"
+      - "scripts/m1_operator_release_cli.py"
+      - "scripts/m1_mobile_owner_release.py"
+      - "scripts/m1_mobile_gateway_bootstrap.py"
+      - "scripts/m1_mobile_gateway_successor.py"
+      - "tests/test_m1_mobile_gateway_bootstrap.py"
+      - "tests/test_m1_mobile_gateway_successor.py"
+      - "scripts/m1_owner_production_recovery.py"
+      - "tests/test_m1_owner_production_recovery.py"
+      - "scripts/remote_gateway.py"
+      - "scripts/run_remote_gateway.py"
+      - "scripts/operator_server.py"
+      - "src/ai_foundation/gateway_csrf.py"
+      - "tests/test_remote_gateway.py"
+      - "tests/test_gateway_csrf.py"
+      - "tests/test_m1_mobile_owner_release.py"
+      - "tests/test_m1_mobile_owner_release.py"
+      - "tests/test_release_gate.py"
+      - "tests/test_m1_operator_release_host.py"
+      - "tests/test_m1_operator_release_cli.py"
+      - "src/ai_foundation/development_requests.py"
+      - "src/ai_foundation/mcp_host.py"
+      - "src/ai_foundation/human_renderer.py"
+      - "tests/test_human_renderer.py"
+      - "scripts/m1_strata_runtime_probe.py"
+      - ".github/workflows/m1-strata-code-discovery.yml"
+      - "scripts/foundation_mcp_stdio.py"
+      - "scripts/m1_owner_delegated_mcp_stdio.py"
+      - "scripts/m1_development_ticket_factory.py"
+      - "scripts/m1_direct_development.py"
+      - "scripts/m1_strata_owner_ticket_admission.py"
+      - "scripts/m1_reviewed_strata_ticket.py"
+      - "scripts/m1_strata_ticket_overview.py"
+      - "scripts/m1_selfdev_release_preflight.py"
+      - "tests/test_m1_selfdev_release_preflight.py"
+      - "tests/test_m1_strata_ticket_overview.py"
+permissions:
+  contents: read
+concurrency:
+  group: foundation-m1-selfdev-readonly-probe
+  cancel-in-progress: false
+jobs:
+  owner-source-readonly:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        (github.event.pull_request.number == 1419 &&
+         github.event.pull_request.head.ref == 'feat/owner-klm-review-code-withdrawal-20261117')
+        ||
+        (github.event.pull_request.number == 1502 &&
+         github.event.pull_request.head.ref == 'fix/owner-mobile-gateway-actions-20261119' &&
+         github.event.pull_request.base.ref == 'feat/owner-klm-review-code-withdrawal-20261117' &&
+         github.event.pull_request.base.sha == '685e6880e02f906792a28c492041f2d15b84f8d7')
+        ||
+        (github.event.pull_request.number == 1503 &&
+         github.event.pull_request.head.ref == 'feat/mobile-owner-release-no-terminal-20261119' &&
+         github.event.pull_request.base.ref == 'fix/owner-mobile-gateway-actions-20261119' &&
+         github.event.pull_request.base.sha == '425e6d4a0dfe80eb50b9d18554286682fba57c3f')
+        ||
+        (github.event.pull_request.number == 1505 &&
+         github.event.pull_request.head.ref == 'fix/owner-code-manifest-capacity-20261120' &&
+         github.event.pull_request.base.ref == 'feat/mobile-owner-release-no-terminal-20261119' &&
+         github.event.pull_request.base.sha == '739a823c57ed6dbc1ca48e30c01ab7fbe2918d9d')
+        ||
+        (github.event.pull_request.number == 1506 &&
+         github.event.pull_request.head.ref == 'fix/postcutover-gateway-upstream-readback-20261120' &&
+         github.event.pull_request.base.ref == 'fix/owner-code-manifest-capacity-20261120' &&
+         github.event.pull_request.base.sha == '358885c1793911f467d1adbb963922d9622bfd45')
+        ||
+        (github.event.pull_request.number == 1507 &&
+         github.event.pull_request.head.ref == 'fix/p0-mcp-operator-status-failclosed-20261121' &&
+         github.event.pull_request.base.ref == 'fix/postcutover-gateway-upstream-readback-20261120' &&
+         github.event.pull_request.base.sha == '15815926d09ef15d9b804603bfb99ae7c3f24c6e')
+        ||
+        (github.event.pull_request.number == 1509 &&
+         github.event.pull_request.head.ref == 'fix/p0-review-source-unification-20261121' &&
+         github.event.pull_request.base.ref == 'fix/p0-mcp-operator-status-failclosed-20261121' &&
+         github.event.pull_request.base.sha == '92e9a7e643cfd028047cccb70d3f3b338b8cd79d')
+        ||
+        (github.event.pull_request.number == 1510 &&
+         github.event.pull_request.head.ref == 'fix/p0-operator-review-runtime-import-root-20261121' &&
+         github.event.pull_request.base.ref == 'fix/p0-review-source-unification-20261121' &&
+         github.event.pull_request.base.sha == '1b231058ee6d15c97419ed63140ef8a125c9d536')
+        ||
+        (github.event.pull_request.number == 1514 &&
+         github.event.pull_request.head.ref == 'fix/p0-selfdev-fastlane-single-acceptance-20261121' &&
+         github.event.pull_request.base.ref == 'fix/p0-operator-review-runtime-import-root-20261121' &&
+         github.event.pull_request.base.sha == 'd4ef51c2dbbe957eb5ed55b6897bd4a43d29110f')
+      )
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 4
+    steps:
+      - name: Checkout exact owner Draft SHA without persistent credentials
+        uses: actions/checkout@v5
+        with:
+          path: .foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Read-only source and existing tunnel readiness
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONPATH: src:scripts:.
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B scripts/m1_selfdev_release_preflight.py
+
+  owner-source-stage:
+    # Source-only staging is a private, inert worktree; a separate current
+    # Guard owner release remains mandatory before any running-code switch.
+    needs: [owner-source-readonly]
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        (github.event.pull_request.number == 1419 &&
+         github.event.pull_request.head.ref == 'feat/owner-klm-review-code-withdrawal-20261117')
+        ||
+        (github.event.pull_request.number == 1502 &&
+         github.event.pull_request.head.ref == 'fix/owner-mobile-gateway-actions-20261119' &&
+         github.event.pull_request.base.ref == 'feat/owner-klm-review-code-withdrawal-20261117' &&
+         github.event.pull_request.base.sha == '685e6880e02f906792a28c492041f2d15b84f8d7')
+        ||
+        (github.event.pull_request.number == 1503 &&
+         github.event.pull_request.head.ref == 'feat/mobile-owner-release-no-terminal-20261119' &&
+         github.event.pull_request.base.ref == 'fix/owner-mobile-gateway-actions-20261119' &&
+         github.event.pull_request.base.sha == '425e6d4a0dfe80eb50b9d18554286682fba57c3f')
+        ||
+        (github.event.pull_request.number == 1505 &&
+         github.event.pull_request.head.ref == 'fix/owner-code-manifest-capacity-20261120' &&
+         github.event.pull_request.base.ref == 'feat/mobile-owner-release-no-terminal-20261119' &&
+         github.event.pull_request.base.sha == '739a823c57ed6dbc1ca48e30c01ab7fbe2918d9d')
+        ||
+        (github.event.pull_request.number == 1506 &&
+         github.event.pull_request.head.ref == 'fix/postcutover-gateway-upstream-readback-20261120' &&
+         github.event.pull_request.base.ref == 'fix/owner-code-manifest-capacity-20261120' &&
+         github.event.pull_request.base.sha == '358885c1793911f467d1adbb963922d9622bfd45')
+        ||
+        (github.event.pull_request.number == 1507 &&
+         github.event.pull_request.head.ref == 'fix/p0-mcp-operator-status-failclosed-20261121' &&
+         github.event.pull_request.base.ref == 'fix/postcutover-gateway-upstream-readback-20261120' &&
+         github.event.pull_request.base.sha == '15815926d09ef15d9b804603bfb99ae7c3f24c6e')
+        ||
+        (github.event.pull_request.number == 1509 &&
+         github.event.pull_request.head.ref == 'fix/p0-review-source-unification-20261121' &&
+         github.event.pull_request.base.ref == 'fix/p0-mcp-operator-status-failclosed-20261121' &&
+         github.event.pull_request.base.sha == '92e9a7e643cfd028047cccb70d3f3b338b8cd79d')
+        ||
+        (github.event.pull_request.number == 1510 &&
+         github.event.pull_request.head.ref == 'fix/p0-operator-review-runtime-import-root-20261121' &&
+         github.event.pull_request.base.ref == 'fix/p0-review-source-unification-20261121' &&
+         github.event.pull_request.base.sha == '1b231058ee6d15c97419ed63140ef8a125c9d536')
+        ||
+        (github.event.pull_request.number == 1514 &&
+         github.event.pull_request.head.ref == 'fix/p0-selfdev-fastlane-single-acceptance-20261121' &&
+         github.event.pull_request.base.ref == 'fix/p0-operator-review-runtime-import-root-20261121' &&
+         github.event.pull_request.base.sha == 'd4ef51c2dbbe957eb5ed55b6897bd4a43d29110f')
+      )
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 4
+    steps:
+      - name: Checkout exact owner Draft SHA without token persistence
+        uses: actions/checkout@v5
+        with:
+          path: .foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          # Imported commits must include the actual main ancestry. A shallow
+          # source-stage worktree otherwise fails the real owner Canon gate.
+          fetch-depth: 0
+      - name: Stage immutable source worktree and independently compare exact bytes
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONPATH: src:scripts:.
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import platform
+          import subprocess
+          from m1_selfdev_release_preflight import ROOT, scoped_event, source_probe
+          from m1_foundation_tunnel_stage import stage_source, StageDenied
+          from m1_foundation_tunnel import _trusted_bytes
+          from m1_operator_release_canon import observe_release_canon
+          try:
+              event=json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+              head=subprocess.run(
+                  ["/usr/bin/git","-C",str(ROOT),"rev-parse","HEAD"],
+                  capture_output=True,text=True,check=True,timeout=5).stdout.strip()
+              if (not scoped_event(event,env=os.environ,current_sha=head)
+                      or platform.system()!="Darwin"
+                      or platform.machine() not in ("arm64","aarch64")
+                      or os.getuid()!=501 or os.geteuid()!=501):
+                  raise ValueError("OWNER_EXACT_DRAFT_REQUIRED")
+              result=stage_source()
+              if result["status"]!="SOURCE_STAGED_VERIFIED" or result["revision"]!=head:
+                  raise ValueError("STAGED_REVISION_UNVERIFIED")
+              stage=Path.home()/".ai-foundation-tunnel-sources"/head
+              evidence=source_probe(ROOT,stage,_trusted_bytes)
+              if evidence["owner_checkout_source_match"] is not True:
+                  raise ValueError("STAGED_SOURCE_HASH_MISMATCH")
+              # Verify *this actual private owner worktree*, not the separate
+              # CI checkout. Canon still reads fresh GitHub main and validates
+              # policy files. Never create a Guard approval or a service effect.
+              canon=observe_release_canon(stage)
+              if (canon.get("status")!="CANON_SOURCE_VERIFIED"
+                      or canon.get("source_count")!=6):
+                  raise ValueError("STAGED_CANON_SOURCE_UNVERIFIED")
+              # For the one-time smartphone bootstrap inspect the *actual*
+              # installed gateway plist and prove it accepts the candidate
+              # constrained loopback definition, without any service effect.
+              gateway_shape="NOT_REQUIRED"
+              if event["pull_request"]["number"]==1503:
+                  from scripts.m1_mobile_gateway_bootstrap import (
+                      _owned_plist, _candidate_plist)
+                  import plistlib
+                  _, _, prior_doc, _ = _owned_plist()
+                  candidate_plist=plistlib.loads(_candidate_plist(prior_doc,stage))
+                  if (candidate_plist.get("Label")!=
+                          "dev.quest7070.ai-foundation.remote-gateway"):
+                      raise ValueError("STAGED_GATEWAY_HOST_IDENTITY_UNVERIFIED")
+                  gateway_shape="OWNER_INSTALLED_PLIST_CANDIDATE_VERIFIED"
+              print(json.dumps({
+                  "status":"IMMUTABLE_SOURCE_STAGED_VERIFIED",
+                  "revision":head,
+                  "verified_source_files":evidence["candidate_python_files_checked"],
+                  "source_bytes_equal":True,
+                  "canon_source_ancestry_verified":True,
+                  "canon_source_main":canon["source_main"],
+                  "gateway_plist_shape":gateway_shape,
+                  "owner_checkout_unchanged":result["owner_branch_changed"] is False,
+                  "production_installed":False,
+                  "tunnel_switched":False,"model_calls":0,"service_mutations":0
+              },sort_keys=True))
+          except (OSError,ValueError,TypeError,StageDenied,
+                  subprocess.SubprocessError,RuntimeError) as e:
+              # Only source-defined, fixed gateway preflight reason codes
+              # may leave the owner M1. Never return args, env, paths, stderr.
+              allowed={
+                  "EXACT_GATEWAY_LAUNCHAGENT_UNAVAILABLE",
+                  "GATEWAY_LAUNCH_SHAPE_UNVERIFIED",
+                  "GATEWAY_PORT_OR_TLS_CHANGED",
+                  "GATEWAY_PYTHON_LAUNCHER_MISMATCH",
+                  "GATEWAY_PYTHON_ENV_UNTRUSTED",
+                  "GATEWAY_PORT_CHANGED",
+                  "GATEWAY_TLS_ARGS_UNVERIFIED",
+                  "GATEWAY_RUNNER_IDENTITY_UNVERIFIED",
+                  "GATEWAY_LISTEN_OPTION_INVALID",
+                  "GATEWAY_LOOPBACK_NOT_PINNED",
+              }
+              reason=(str(e) if type(e).__name__=="BootstrapDenied"
+                      and str(e) in allowed
+                      else "OWNER_SOURCE_STAGING_UNVERIFIED")
+              observation={"status":"BLOCKED","reason":reason,
+                           "model_calls":0,"service_mutations":0}
+              if reason=="GATEWAY_PYTHON_LAUNCHER_MISMATCH":
+                  # A finite diagnostic only. Do not export argv, paths,
+                  # home directory, environment or other owner data.
+                  try:
+                      from scripts.m1_mobile_gateway_bootstrap import (
+                          _owned_plist, _launcher_kind)
+                      observation["gateway_launcher_kind"]=_launcher_kind(
+                          _owned_plist()[2].get("ProgramArguments"))
+                  except (OSError,ValueError,TypeError,RuntimeError):
+                      observation["gateway_launcher_kind"]="UNVERIFIED"
+              print(json.dumps(observation))
+              raise SystemExit(1)
+          PY
+
+  owner-pending-code-triage-readonly:
+    # Classify existing pending CODE reviews using the real owner M1 Work DB,
+    # tracked source + fixed tests. Never output private instructions/source,
+    # create approvals, admit a task or write to the owner checkout.
+    needs: [owner-source-stage]
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.pull_request.number == 1503 &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/mobile-owner-release-no-terminal-20261119' &&
+      github.event.pull_request.base.ref == 'fix/owner-mobile-gateway-actions-20261119' &&
+      github.event.pull_request.base.sha == '425e6d4a0dfe80eb50b9d18554286682fba57c3f'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact immutable owner Draft without persisted credentials
+        uses: actions/checkout@v5
+        with:
+          path: .foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Classify current pending review readiness without Work or Guard effects
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONPATH: src:scripts:.
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import json, os, platform, sqlite3
+          from pathlib import Path
+          from scripts.m1_development_review_candidate import _saved_request, _TARGET, _TEST
+          from scripts.m1_development_owner_review import OwnerDevelopmentReview
+          from scripts.m1_development_ticket_factory import _owner_local_repo
+          from scripts.m1_direct_development import installed_config
+          from scripts.m1_development_bridge import require_m1
+
+          # Emit only fixed reason codes and aggregate counts. Never print
+          # ticket names, owner paths, prompts, source bytes or exception text.
+          allowed=frozenset({
+              'REQUEST_NOT_WAITING_FOR_REVIEW',
+              'REQUEST_CONTENT_INVALID',
+              'REVIEW_SCOPE_SELECTION_REQUIRED',
+              'OWNER_CHECKOUT_NOT_CLEAN',
+              'OWNER_CHECKOUT_CHANGED_DURING_REVIEW',
+              'CANDIDATE_SOURCE_OR_TEST_UNVERIFIED',
+              'OWNER_BASE_UNVERIFIED',
+              'REQUEST_CHANGED_DURING_REVIEW',
+              'OWNER_WORK_DATABASE_UNVERIFIED',
+              'OWNER_LOCAL_REPOSITORY_UNVERIFIED',
+          })
+          result={
+              'status':'OWNER_PENDING_CODE_TRIAGE_UNVERIFIED',
+              'read_only':True, 'work_writes':0, 'guard_writes':0,
+              'model_calls':0, 'service_mutations':0, 'production_installed':False,
+          }
+          try:
+              require_m1()
+              if (platform.system()!='Darwin'
+                      or platform.machine() not in ('arm64','aarch64')
+                      or os.getuid()!=501 or os.geteuid()!=501):
+                  raise ValueError('OWNER_M1_REQUIRED')
+              _, config, root = installed_config()
+              repo = _owner_local_repo()
+              service = OwnerDevelopmentReview(
+                  root,repo_factory=lambda:repo,work_db=config.work_db)
+              pending=service.pending_review_statuses()
+              counts={}
+              for row in pending:
+                  code=row['state']
+                  counts[code]=counts.get(code,0)+1
+              # Output only source code basenames (not arbitrary owner paths),
+              # safe enum codes and existence booleans. No private instructions
+              # or source/test contents ever leave the M1 owner host.
+              summarized=[]
+              for row in pending:
+                  item=dict(ticket_id=row['ticket_id'],state=row['state'])
+                  try:
+                      instruction=_saved_request(
+                          root,row['ticket_id'],work_db=config.work_db)
+                      targets=sorted(set(_TARGET.findall(instruction)))
+                      tests=sorted(set(_TEST.findall(instruction)))
+                      item['target_mentions']=len(targets)
+                      item['test_mentions']=len(tests)
+                      if len(targets)==1:
+                          path=Path(targets[0])
+                          item['target_file']=path.name
+                          item['owner_source_present']=(repo / path).is_file()
+                          item['candidate_source_present']=(Path.cwd()/path).is_file()
+                  except (OSError,ValueError,PermissionError,RuntimeError,
+                          sqlite3.Error):
+                      item['source_hint']='UNVERIFIED'
+                  summarized.append(item)
+              result.update(
+                  status='OWNER_PENDING_CODE_TRIAGE_OBSERVED',
+                  pending_count=len(pending),
+                  preview_ready_count=counts.get('PREVIEW_READY',0),
+                  categories={key:counts[key] for key in sorted(counts)},
+                  per_ticket=summarized,
+              )
+          except (OSError,ValueError,PermissionError,RuntimeError,
+                  sqlite3.Error):
+              # Do not expose the owner machine's private failure details.
+              pass
+          print(json.dumps(result,sort_keys=True))
+          PY
+
+      - name: Diagnose live review GET from M1 without phone or owner input
+        # Owner-facing URLs must be checked on the running M1 before advising.
+        # GET only: no Guard action, review, Work, model or service mutation.
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import http.client
+          import json
+          import os
+          import ssl
+          import platform
+
+          result = {
+              "status": "OWNER_REVIEW_ROUTE_DIAGNOSIS",
+              "operator": "UNVERIFIED",
+              "gateway_loopback": "UNVERIFIED",
+              "serve_from_m1": "UNVERIFIED",
+              "read_only": True,
+              "owner_interaction": False,
+              "model_calls": 0,
+              "guard_writes": 0,
+              "work_writes": 0,
+              "service_mutations": 0,
+          }
+          if (platform.system() == "Darwin"
+                  and platform.machine() in ("arm64", "aarch64")
+                  and os.getuid() == 501 and os.geteuid() == 501):
+              def probe(label, *, hostname, port, tls, host_header):
+                  connection = None
+                  try:
+                      if tls == "verified":
+                          connection = http.client.HTTPSConnection(
+                              hostname, port, timeout=4,
+                              context=ssl.create_default_context())
+                      elif tls == "loopback":
+                          # No secrets or owner tokens transmitted to the proxy.
+                          connection = http.client.HTTPSConnection(
+                              "127.0.0.1", port, timeout=4,
+                              context=ssl._create_unverified_context())
+                      else:
+                          connection = http.client.HTTPConnection(
+                              "127.0.0.1", port, timeout=4)
+                      connection.request("GET", "/development/review",
+                                         headers={"Host": host_header,
+                                                  "Accept": "text/html"})
+                      response = connection.getresponse()
+                      status = response.status
+                      # No HTML, source, identity or response body in CI logs.
+                      result[label] = {
+                          200: "HTTP_200",
+                          400: "HTTP_400_HOST_OR_REQUEST_REJECTED",
+                          403: "HTTP_403_OWNER_PROOF_REQUIRED",
+                          404: "HTTP_404_ROUTE_MISSING",
+                          503: "HTTP_503_REVIEW_OR_UPSTREAM_UNAVAILABLE",
+                      }.get(status, "HTTP_OTHER")
+                      if label == "operator" and status == 503:
+                          body = response.read(192).decode(
+                              "utf-8", errors="replace").strip()
+                          result["operator_503_reason"] = {
+                              "review unavailable": "ADAPTER_NOT_BOUND",
+                              "owner review queue unavailable":
+                                  "OWNER_REVIEW_QUEUE_UNAVAILABLE",
+                          }.get(body, "UNCLASSIFIED_503")
+                  except (OSError, TimeoutError, ValueError,
+                          http.client.HTTPException, ssl.SSLError):
+                      result[label] = "TRANSPORT_UNVERIFIED"
+                  finally:
+                      if connection is not None:
+                          connection.close()
+
+              probe("operator", hostname="127.0.0.1",
+                    port=8766, tls="plain", host_header="127.0.0.1:8766")
+              probe("gateway_loopback", hostname="127.0.0.1",
+                    port=8793, tls="loopback", host_header="127.0.0.1:8793")
+              probe("serve_from_m1",
+                    hostname="owner-m1.example.ts.net",
+                    port=8454, tls="verified",
+                    host_header="owner-m1.example.ts.net:8454")
+          else:
+              result["status"] = "OWNER_HOST_UNVERIFIED"
+          print(json.dumps(result, sort_keys=True))
+          PY
+
+  existing-operator-guard-readonly:
+    # Verify the exact owner-clicked frozen #1502 run/ref on M1 without
+    # creating/revoking approval or deploying anything. Source-stage MUST pass.
+    needs: [owner-source-stage]
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.pull_request.number == 1503 &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/mobile-owner-release-no-terminal-20261119' &&
+      github.event.pull_request.base.ref == 'fix/owner-mobile-gateway-actions-20261119' &&
+      github.event.pull_request.base.sha == '425e6d4a0dfe80eb50b9d18554286682fba57c3f'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the exact Draft observer without stored credentials
+        uses: actions/checkout@v5
+        with:
+          path: .foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Read exact previously requested Operator Guard state without effects
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONPATH: src:.
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import json
+          from scripts import m1_operator_release_cli as cli
+          from scripts.m1_mobile_gateway_bootstrap import observe_existing_operator_guard
+          try:
+              cli._owner_session()
+              state = observe_existing_operator_guard()
+          except (OSError, ValueError, TypeError, KeyError,
+                  RuntimeError, cli.OwnerReleaseDenied):
+              # No exception messages, Guard fields, paths or identities leave M1.
+              state = "EXACT_OPERATOR_OBSERVATION_UNVERIFIED"
+          print(json.dumps({"status": state,
+                            "read_only": True, "guard_writes": 0,
+                            "service_mutations": 0, "model_calls": 0,
+                            "production_installed": False},sort_keys=True))
+          PY
+
+  operator-recovery-runtime-readonly:
+    # Physical, read-only PID + installed-source observation for exact owner
+    # source candidates. Never run or approve the candidate/recovery entrypoint.
+    needs: [owner-source-stage]
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        (github.event.pull_request.number == 1505 &&
+         github.event.pull_request.head.ref == 'fix/owner-code-manifest-capacity-20261120' &&
+         github.event.pull_request.base.ref == 'feat/mobile-owner-release-no-terminal-20261119' &&
+         github.event.pull_request.base.sha == '739a823c57ed6dbc1ca48e30c01ab7fbe2918d9d')
+        ||
+        (github.event.pull_request.number == 1506 &&
+         github.event.pull_request.head.ref == 'fix/postcutover-gateway-upstream-readback-20261120' &&
+         github.event.pull_request.base.ref == 'fix/owner-code-manifest-capacity-20261120' &&
+         github.event.pull_request.base.sha == '358885c1793911f467d1adbb963922d9622bfd45')
+        ||
+        (github.event.pull_request.number == 1507 &&
+         github.event.pull_request.head.ref == 'fix/p0-mcp-operator-status-failclosed-20261121' &&
+         github.event.pull_request.base.ref == 'fix/postcutover-gateway-upstream-readback-20261120' &&
+         github.event.pull_request.base.sha == '15815926d09ef15d9b804603bfb99ae7c3f24c6e')
+        ||
+        (github.event.pull_request.number == 1509 &&
+         github.event.pull_request.head.ref == 'fix/p0-review-source-unification-20261121' &&
+         github.event.pull_request.base.ref == 'fix/p0-mcp-operator-status-failclosed-20261121' &&
+         github.event.pull_request.base.sha == '92e9a7e643cfd028047cccb70d3f3b338b8cd79d')
+        ||
+        (github.event.pull_request.number == 1510 &&
+         github.event.pull_request.head.ref == 'fix/p0-operator-review-runtime-import-root-20261121' &&
+         github.event.pull_request.base.ref == 'fix/p0-review-source-unification-20261121' &&
+         github.event.pull_request.base.sha == '1b231058ee6d15c97419ed63140ef8a125c9d536')
+        ||
+        (github.event.pull_request.number == 1514 &&
+         github.event.pull_request.head.ref == 'fix/p0-selfdev-fastlane-single-acceptance-20261121' &&
+         github.event.pull_request.base.ref == 'fix/p0-operator-review-runtime-import-root-20261121' &&
+         github.event.pull_request.base.sha == 'd4ef51c2dbbe957eb5ed55b6897bd4a43d29110f')
+      )
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - name: Read back original Operator PID, endpoint and bounded staged source
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          """One isolated M1 owner observation; never run candidate code.
+
+          The loaded process is identified by launchd/PID/listener only.
+          The declared source's disk bytes are compared to the staged exact
+          candidate and are not mistaken for proof of loaded Python modules.
+          Neither this check nor an existing Guard receipt authorizes release.
+          """
+          import hashlib, http.client, json, os, plistlib, re, stat, subprocess, sys
+          from pathlib import Path
+
+          label = 'dev.quest7070.ai-foundation.operator'
+          root = Path.home() / '.ai-foundation-tunnel-sources'
+          result = {
+              'status': 'OPERATOR_RUNTIME_READBACK_UNVERIFIED',
+              'operator_plist_bound': False,
+              'operator_pid_listening_8766': False,
+              'operator_api': 'NOT_VERIFIED',
+              'operator_source_provenance': 'UNVERIFIED',
+              'original_guard_release_history': 'NOT_RECONCILED',
+              'current_guard_approval': 'NOT_CHECKED',
+              'loaded_python_modules_verified': False,
+              'production_candidate_installed': False,
+              'mobile_owner_post': 'NOT_VERIFIED',
+              'guard_writes': 0, 'service_mutations': 0, 'model_calls': 0,
+          }
+
+          def fixed(*argv):
+              try:
+                  return subprocess.run(list(argv), capture_output=True,
+                                        text=True, timeout=5, check=False)
+              except (OSError, ValueError, subprocess.SubprocessError):
+                  return None
+
+          def bounded_file(path, limit=131072):
+              if path.is_symlink():
+                  return None
+              try:
+                  info = path.stat()
+                  if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= limit:
+                      return None
+                  return path.read_bytes()
+              except (OSError, ValueError):
+                  return None
+
+          try:
+              if sys.platform != 'darwin' or os.getuid() != 501 or os.geteuid() != 501:
+                  raise ValueError('OWNER_M1_REQUIRED')
+              plist = Path.home() / 'Library' / 'LaunchAgents' / (label + '.plist')
+              info = plist.lstat()
+              if (not stat.S_ISREG(info.st_mode) or info.st_uid != 501
+                      or info.st_mode & 0o022 or info.st_size > 32768):
+                  raise ValueError('OPERATOR_PLIST_UNVERIFIED')
+              doc = plistlib.loads(plist.read_bytes())
+              argv = doc.get('ProgramArguments')
+              declared = doc.get('WorkingDirectory')
+              if (doc.get('Label') != label or type(argv) is not list
+                      or not 2 <= len(argv) <= 24
+                      or any(type(v) is not str or len(v) > 4096 for v in argv)
+                      or sum(v.endswith('/scripts/operator_server.py') for v in argv) != 1
+                      or type(declared) is not str):
+                  raise ValueError('OPERATOR_PLIST_UNVERIFIED')
+              result['operator_plist_bound'] = True
+              running = fixed('/bin/launchctl', 'print', 'gui/501/' + label)
+              pids = (re.findall(r'^\s*pid = ([0-9]+)\s*$',
+                     running.stdout, re.M)
+                     if running is not None and running.returncode == 0
+                     and len(running.stdout) <= 131072 else [])
+              result['operator_launchd_pid_present'] = len(pids) == 1
+              listener = (fixed('/usr/sbin/lsof', '-nP', '-t', '-iTCP:8766',
+                                '-sTCP:LISTEN') if len(pids) == 1 else None)
+              result['operator_pid_listening_8766'] = (
+                  listener is not None and listener.returncode == 0
+                  and listener.stdout.strip() == pids[0])
+              if result['operator_pid_listening_8766']:
+                  conn = http.client.HTTPConnection('127.0.0.1', 8766, timeout=3)
+                  try:
+                      conn.request('GET', '/api/human',
+                                   headers={'Host':'127.0.0.1'})
+                      response = conn.getresponse()
+                      body = response.read(65537)
+                      if (response.status == 200 and len(body) <= 65536
+                              and type(json.loads(body)) is dict):
+                          result['operator_api'] = 'HTTP_200_VALID_JSON'
+                      else:
+                          result['operator_api'] = 'UNVERIFIED_RESPONSE'
+                  except (OSError, ValueError, TypeError, http.client.HTTPException):
+                      result['operator_api'] = 'UNREACHABLE'
+                  finally:
+                      conn.close()
+              # Installed Operator's canonical layout is NOT the Gateway's
+              # .ai-foundation-tunnel-sources/<sha> layout. Its original
+              # OperatorOnlyCutover pins the WorkingDirectory to a private
+              # Guard scope-owned .../operator-release-staging/<scope>/candidate.
+              # Validate its existing manifest and tracked entry digest,
+              # without running candidate code or reading private work data.
+              source_path = Path(declared)
+              stage_root = (Path.home() / 'Library' / 'Application Support' /
+                            'AI-Foundation' / 'operator-release-staging')
+              stage = source_path.parent
+              source_file = source_path / 'scripts/operator_server.py'
+              entry = [v for v in argv if v.endswith('/scripts/operator_server.py')]
+              valid_layout = (
+                  source_path.name == 'candidate'
+                  and stage.parent == stage_root
+                  and re.fullmatch(r'[0-9a-f]{64}', stage.name) is not None
+                  and source_path.is_dir()
+                  and not source_path.is_symlink()
+                  and not stage.is_symlink()
+                  and stage.stat().st_uid == 501
+                  and stage.stat().st_mode & 0o077 == 0
+                  and len(entry) == 1
+                  and Path(entry[0]) == source_file)
+              result['operator_manifest_check'] = 'LAYOUT_UNRECOGNIZED'
+              if valid_layout:
+                  # The canonical release stages *every* tracked repository
+                  # file and its SHA256. A 64KiB cap silently rejects a valid
+                  # manifest of hundreds or thousands of tracked files.
+                  manifest_path = stage / 'manifest.json'
+                  meta = manifest_path.lstat()
+                  if (not stat.S_ISREG(meta.st_mode)
+                          or meta.st_uid != 501 or meta.st_mode & 0o077):
+                      raise ValueError('GUARD_MANIFEST_UNTRUSTED')
+                  manifest_bytes = bounded_file(manifest_path, 8*1024*1024)
+                  installed = bounded_file(source_file)
+                  if manifest_bytes is None or installed is None:
+                      result['operator_manifest_check'] = 'BOUNDED_FILE_UNAVAILABLE'
+                  else:
+                      manifest = json.loads(manifest_bytes)
+                      if type(manifest) is not dict:
+                          raise ValueError('GUARD_MANIFEST_UNTRUSTED')
+                      tracked = manifest.get('tracked')
+                      committed = manifest.get('candidate_commit')
+                      if (manifest.get('schema') != 1
+                              or manifest.get('scope_ref') != stage.name
+                              or type(committed) is not str
+                              or re.fullmatch(r'[0-9a-f]{40}', committed) is None
+                              or type(tracked) is not dict):
+                          result['operator_manifest_check'] = 'SCOPE_OR_SCHEMA_UNVERIFIED'
+                      elif (tracked.get('scripts/operator_server.py')
+                              != hashlib.sha256(installed).hexdigest()):
+                          result['operator_manifest_check'] = 'ENTRY_DIGEST_UNVERIFIED'
+                      else:
+                          result['operator_manifest_check'] = 'VERIFIED'
+                          result['operator_declared_source_sha'] = committed
+                          result['operator_declared_runner_digest'] = (
+                              hashlib.sha256(installed).hexdigest())
+                          result['operator_source_provenance'] = (
+                              'GUARD_SCOPE_MANIFEST_DISK_VERIFIED')
+                          candidate_sha = os.environ.get('CANDIDATE_SHA', '')
+                          if re.fullmatch(r'[0-9a-f]{40}', candidate_sha):
+                              candidate_path = root / candidate_sha
+                              if (candidate_path.is_dir()
+                                      and not candidate_path.is_symlink()):
+                                  candidate = bounded_file(
+                                      candidate_path / 'scripts/operator_server.py')
+                                  if candidate is not None:
+                                      result['operator_candidate_source_sha'] = (
+                                          candidate_sha)
+                                      result['operator_candidate_runner_digest'] = (
+                                          hashlib.sha256(candidate).hexdigest())
+                                      result['operator_runner_disk_update_required'] = (
+                                          installed != candidate)
+              result['operator_source_layout'] = (
+                  'CANONICAL_GUARD_STAGE' if valid_layout
+                  else 'UNRECOGNIZED')
+              result['status'] = 'OPERATOR_RUNTIME_OBSERVED_NO_EFFECT'
+          except (OSError, ValueError, TypeError, IndexError,
+                  plistlib.InvalidFileException):
+              result['status'] = 'OPERATOR_RUNTIME_READBACK_UNVERIFIED'
+          print(json.dumps(result, sort_keys=True))
+          PY
+      - name: Read-only verified Operator release predecessor uniqueness
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import json, os, re, sys
+          from pathlib import Path
+          sha = os.environ.get('CANDIDATE_SHA', '')
+          result = {'status':'PREDECESSOR_UNVERIFIED', 'source_sha':sha,
+                    'service_mutations':0, 'guard_writes':0,
+                    'model_calls':0, 'owner_approval':'NOT_REQUESTED'}
+          try:
+              if (os.getuid() != 501 or os.geteuid() != 501
+                      or re.fullmatch('[a-f0-9]{40}', sha) is None):
+                  raise ValueError('OWNER_CONTEXT_UNVERIFIED')
+              stage = Path.home() / '.ai-foundation-tunnel-sources' / sha
+              if not stage.is_dir() or stage.is_symlink():
+                  raise ValueError('CANDIDATE_SOURCE_UNVERIFIED')
+              sys.path.insert(0, str(stage / 'src'))
+              sys.path.insert(0, str(stage))
+              from scripts import m1_owner_production_recovery as recovery
+              source = recovery._source(sha)
+              scope = recovery._operator_scope(source, sha, Path.home())
+              _, _, prior = recovery._operator_predecessor(
+                  Path.home(), scope, source)
+              if re.fullmatch('[a-f0-9]{64}', prior) is None:
+                  raise ValueError('PREDECESSOR_SCOPE_UNVERIFIED')
+              result['status'] = 'UNIQUE_VERIFIED_PREDECESSOR'
+              result['release_scope_ref'] = scope.scope_ref
+          except Exception as error:
+              # Do not reveal private owner filenames, DB records or messages.
+              allowed = {'VERIFIED_OPERATOR_PREDECESSOR_NOT_UNIQUE',
+                         'OPERATOR_LEDGER_UNTRUSTED',
+                         'OPERATOR_LEDGER_INVENTORY_UNBOUNDED',
+                         'OPERATOR_SCOPE_NOT_SOURCE_BOUND'}
+              reason = str(error)
+              result['reason'] = reason if reason in allowed else 'READBACK_UNVERIFIED'
+          print('M1_OPERATOR_RELEASE_PREDECESSOR='+json.dumps(result,sort_keys=True))
+          PY
+      - name: Observe live Operator socket and HTTP without mutations
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import http.client, json, os, re, subprocess
+          result = {'status':'OWNER_RUNTIME_UNVERIFIED',
+                    'launchd':'UNVERIFIED','tcp_8766':'UNVERIFIED',
+                    'status_api':'UNVERIFIED','human_api':'UNVERIFIED',
+                    'service_mutations':0,'guard_writes':0,'model_calls':0}
+          if os.getuid()==501 and os.geteuid()==501:
+              try:
+                  proc=subprocess.run(['/bin/launchctl','print',
+                      'gui/501/dev.quest7070.ai-foundation.operator'],
+                      capture_output=True,text=True,timeout=5,check=False)
+                  data=proc.stdout if len(proc.stdout)<=131072 else ''
+                  pids=(re.findall(r'^\s*pid = (\d+)\s*$',data,re.M)
+                        if proc.returncode==0 else [])
+                  result['launchd']=('PID_PRESENT' if len(pids)==1
+                      else 'REGISTERED_NO_PID' if proc.returncode==0
+                      else 'NOT_REGISTERED')
+                  if len(pids)==1:
+                      tcp=subprocess.run(['/usr/sbin/lsof','-nP','-t',
+                          '-iTCP:8766','-sTCP:LISTEN'],capture_output=True,
+                          text=True,timeout=5,check=False)
+                      result['tcp_8766']=('EXACT_PID' if tcp.returncode==0
+                          and tcp.stdout.strip()==pids[0] else 'NOT_EXACT_PID')
+                      if result['tcp_8766']=='EXACT_PID':
+                          for uri,key in (('/api/human/status','status_api'),
+                                          ('/api/human','human_api')):
+                              conn=http.client.HTTPConnection('127.0.0.1',8766,timeout=2)
+                              try:
+                                  conn.request('GET',uri,headers={'Host':'127.0.0.1:8766'})
+                                  response=conn.getresponse()
+                                  payload=response.read(65537)
+                                  result[key]=('HTTP_200_JSON' if response.status==200
+                                      and len(payload)<=65536
+                                      and type(json.loads(payload)) is dict
+                                      else 'HTTP_INVALID')
+                              except (OSError,ValueError,TypeError,http.client.HTTPException):
+                                  result[key]='TRANSPORT_OR_TIMEOUT'
+                              finally:conn.close()
+                  result['status']='OBSERVED_NO_EFFECT'
+              except (OSError,ValueError,subprocess.SubprocessError):
+                  result['status']='READBACK_FAILED_NO_EFFECT'
+          print('M1_OPERATOR_LOCAL_HEALTH='+json.dumps(result,sort_keys=True))
+          PY
+
+  gateway-installed-readonly:
+    # A source-only stage does not reload the separately installed HTTPS
+    # process. Observe the real M1 binding before any proposed gateway change.
+    needs: [owner-source-stage]
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        (github.event.pull_request.number == 1502 &&
+         github.event.pull_request.head.ref == 'fix/owner-mobile-gateway-actions-20261119' &&
+         github.event.pull_request.base.ref == 'feat/owner-klm-review-code-withdrawal-20261117' &&
+         github.event.pull_request.base.sha == '685e6880e02f906792a28c492041f2d15b84f8d7')
+        ||
+        (github.event.pull_request.number == 1505 &&
+         github.event.pull_request.head.ref == 'fix/owner-code-manifest-capacity-20261120' &&
+         github.event.pull_request.base.ref == 'feat/mobile-owner-release-no-terminal-20261119' &&
+         github.event.pull_request.base.sha == '739a823c57ed6dbc1ca48e30c01ab7fbe2918d9d')
+        ||
+        (github.event.pull_request.number == 1506 &&
+         github.event.pull_request.head.ref == 'fix/postcutover-gateway-upstream-readback-20261120' &&
+         github.event.pull_request.base.ref == 'fix/owner-code-manifest-capacity-20261120' &&
+         github.event.pull_request.base.sha == '358885c1793911f467d1adbb963922d9622bfd45')
+      )
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - name: Observe installed gateway plist, socket and source without effects
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import hashlib, http.client, json, os, plistlib, socket, ssl, stat, subprocess
+          from pathlib import Path
+          label='dev.quest7070.ai-foundation.remote-gateway'
+          result={'status':'OBSERVED_LIMITED','gateway_port':8793,
+                  'service_mutations':0,'guard_writes':0,'model_calls':0}
+          try:
+              if os.getuid()!=501 or os.geteuid()!=501:
+                  raise ValueError('OWNER_M1_REQUIRED')
+              root=Path.home()/'Library/LaunchAgents'
+              candidates=list(root.glob('*.plist'))
+              if len(candidates)>200:
+                  raise ValueError('OWNER_PLIST_SET_UNBOUNDED')
+              matched=[]
+              observed=[]
+              for path in candidates:
+                  try:
+                      info=path.lstat()
+                      if (not stat.S_ISREG(info.st_mode)
+                          or info.st_uid!=501 or info.st_mode&0o022
+                          or path.is_symlink() or info.st_size>65536):
+                          continue
+                      loaded=plistlib.loads(path.read_bytes())
+                      current=loaded.get('Label')
+                      if type(current) is str and (
+                          current.startswith('dev.quest7070.ai-foundation.')
+                          and ('remote' in current or 'gateway' in current)):
+                          observed.append(current)
+                      if current==label:
+                          matched.append((path,loaded))
+                  except (OSError,ValueError,TypeError,plistlib.InvalidFileException):
+                      continue
+              result['observed_gateway_labels']=sorted(observed)[:10]
+              if len(matched)!=1:
+                  raise ValueError('GATEWAY_PLIST_NOT_IDENTIFIED')
+              path,doc=matched[0]
+              argv=doc.get('ProgramArguments')
+              if (doc.get('Label')!=label or type(argv) is not list
+                      or not 1<=len(argv)<=24 or any(type(x) is not str
+                      or len(x)>4096 for x in argv)):
+                  raise ValueError('OWNER_LAUNCHD_UNVERIFIED')
+              declared_port=argv[argv.index('--port')+1] if '--port' in argv else '8793'
+              if declared_port!='8793':
+                  raise ValueError('GATEWAY_PORT_IDENTITY_CHANGED')
+              mode=argv[argv.index('--listen')+1] if '--listen' in argv else '0.0.0.0'
+              if mode not in ('127.0.0.1','0.0.0.0','::1'):
+                  mode='OTHER_UNVERIFIED'
+              result['gateway_listen_mode']=mode
+              env=doc.get('EnvironmentVariables')
+              result['serve_owner_opt_in']=(
+                  type(env) is dict and
+                  env.get('FOUNDATION_REMOTE_SERVE_OWNER_ENABLED')=='1')
+              status=subprocess.run(['/bin/launchctl','print',
+                  'gui/501/'+label],capture_output=True,timeout=6,check=False)
+              result['launchd_registered']=status.returncode==0
+              with socket.create_connection(('127.0.0.1',8793),timeout=2):
+                  result['gateway_socket_reachable']=True
+              # Direct loopback GETs are observation only: never forward
+              # private payloads, POST a form, impersonate a Tailscale owner
+              # or use a staged candidate's executable release entrypoint.
+              # HTTP status is a point-in-time signal, not an approval proof.
+              for port,https,key,route in (
+                      (8766,False,'operator_api_probe','/api/human'),
+                      (8793,True,'gateway_health_probe','/health')):
+                  connection=None
+                  try:
+                      connection=(http.client.HTTPSConnection(
+                          '127.0.0.1',port,timeout=3,
+                          context=ssl._create_unverified_context())
+                          if https else http.client.HTTPConnection(
+                              '127.0.0.1',port,timeout=3))
+                      connection.request('GET',route,
+                          headers={'Host':'127.0.0.1'})
+                      reply=connection.getresponse()
+                      result[key]=('HTTP_200' if reply.status==200
+                          else 'HTTP_NON_200')
+                  except (OSError,ValueError,http.client.HTTPException,
+                          ssl.SSLError):
+                      result[key]='UNREACHABLE'
+                  finally:
+                      if connection is not None:
+                          connection.close()
+              # Read-only: compare launchd Operator PID to TCP 8766.
+              # Neither PIDs nor launchd stdout are sent to GitHub logs.
+              try:
+                  launch=subprocess.run(
+                      ['/bin/launchctl','print',
+                       'gui/501/dev.quest7070.ai-foundation.operator'],
+                      capture_output=True,text=True,timeout=5,check=False)
+                  result['operator_launchd_registered']=launch.returncode==0
+                  pids=([line.strip()[6:] for line in launch.stdout.splitlines()
+                         if line.strip().startswith('pid = ')]
+                        if launch.returncode==0
+                        and len(launch.stdout)<=131072 else [])
+                  pids=[p for p in pids if p.isdigit()]
+                  result['operator_launchd_pid_present']=len(pids)==1
+                  if len(pids)==1:
+                      listener=subprocess.run(
+                          ['/usr/sbin/lsof','-nP','-t','-iTCP:8766',
+                           '-sTCP:LISTEN'],
+                          capture_output=True,text=True,timeout=5,
+                          check=False)
+                      result['operator_pid_listening_8766']=(
+                          listener.returncode==0
+                          and listener.stdout.strip()==pids[0])
+                  else:
+                      result['operator_pid_listening_8766']=False
+              except (OSError,ValueError,subprocess.SubprocessError):
+                  result['operator_launchd_probe']='UNVERIFIED'
+              matches=[Path(arg) for arg in argv if arg.startswith('/')
+                       and arg.endswith('run_remote_gateway.py')]
+              result['installed_runner_pinned']=len(matches)==1
+              # Report only the exact approved-source lineage declared by the
+              # existing owner LaunchAgent. No private path, environment
+              # secret, file contents or claim about loaded module cache.
+              import re
+              declared=doc.get('WorkingDirectory')
+              parent=Path.home()/'.ai-foundation-tunnel-sources'
+              if (type(declared) is str and
+                  re.fullmatch(r'[0-9a-f]{40}',Path(declared).name) and
+                  Path(declared).parent==parent and
+                  not Path(declared).is_symlink()):
+                  result['gateway_declared_source_sha']=Path(declared).name
+                  source=Path(declared)/'scripts'/'remote_gateway.py'
+                  if (not source.is_symlink() and source.is_file()
+                      and 0<source.stat().st_size<=30000):
+                      result['gateway_declared_source_digest']=hashlib.sha256(
+                          source.read_bytes()).hexdigest()
+              # The preceding inert M1 stage produced an exact SHA-owned
+              # candidate. Compare on-disk source bytes, not process modules
+              # or untrusted network responses. Never infer approval or apply.
+              candidate_sha=os.environ.get('CANDIDATE_SHA','')
+              if re.fullmatch(r'[0-9a-f]{40}',candidate_sha):
+                  stage=parent/candidate_sha
+                  candidate=stage/'scripts'/'remote_gateway.py'
+                  if (stage.is_dir() and not stage.is_symlink()
+                      and not candidate.is_symlink() and candidate.is_file()
+                      and 0<candidate.stat().st_size<=30000):
+                      result['gateway_candidate_source_sha']=candidate_sha
+                      result['gateway_candidate_source_digest']=hashlib.sha256(
+                          candidate.read_bytes()).hexdigest()
+                      if 'gateway_declared_source_digest' in result:
+                          changed=(result['gateway_candidate_source_digest']
+                                   != result['gateway_declared_source_digest'])
+                          result['gateway_source_update_required']=changed
+                          result['gateway_source_provenance']='DECLARED_DISK_ONLY'
+                          # Disk parity alone never proves loaded module/PID
+                          # identity or authenticated browser POST acceptance.
+                          # A stale source is a known blocker; equal source
+                          # remains unverified until the independent live gate.
+                          result['mobile_owner_post_gate']=(
+                              'SOURCE_UPDATE_REQUIRED' if changed
+                              else 'LIVE_OWNER_POST_UNVERIFIED')
+                  # The independent source-stage job already byte-attests
+                  # and AST-checks this exact candidate. Do NOT import or
+                  # execute Draft source inside the privileged M1 readback.
+                  # Existing Gateway journal was separately observed on M1;
+                  # that historical receipt is not fresh owner authorization.
+                  result['gateway_guard_journal']='NOT_READ_IN_THIS_JOB'
+              # No private paths or secret environment values are exported.
+              result['status']='GATEWAY_INSTALLED_READONLY_OBSERVED'
+          except (OSError,ValueError,TypeError,IndexError,
+                  plistlib.InvalidFileException,subprocess.SubprocessError) as e:
+              # Export only small fixed classification codes, never paths,
+              # subprocess output, environment values or owner identities.
+              reason=str(e)
+              result['reason']=(reason if reason in (
+                  'OWNER_M1_REQUIRED','OWNER_PLIST_SET_UNBOUNDED',
+                  'GATEWAY_PLIST_NOT_IDENTIFIED','OWNER_LAUNCHD_UNVERIFIED',
+                  'GATEWAY_PORT_IDENTITY_CHANGED')
+                  else 'RUNTIME_OR_PLIST_READBACK_UNVERIFIED')
+              result['status']='GATEWAY_INSTALLED_READBACK_UNVERIFIED'
+          print(json.dumps(result,sort_keys=True))
+          PY
+
+  owner-origin-probe-noeffect:
+    # One deliberately invalid HMAC token against the already installed
+    # /release/probe-post. No valid release token, no Guard/Work effect, and
+    # never represents an Android owner POST acceptance.
+    needs: [owner-source-stage]
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.pull_request.number == 1506 &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/postcutover-gateway-upstream-readback-20261120' &&
+      github.event.pull_request.base.ref == 'fix/owner-code-manifest-capacity-20261120' &&
+      github.event.pull_request.base.sha == '358885c1793911f467d1adbb963922d9622bfd45'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - name: Classify existing Serve no-effect owner POST gate with invalid token
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import http.client, json, os, platform, ssl
+          host = 'owner-m1.example.ts.net'
+          result = {
+              'status': 'OWNER_ORIGIN_PROBE_UNVERIFIED',
+              'transport': 'UNVERIFIED',
+              'gateway_gate': 'UNVERIFIED',
+              'physical_android': 'NOT_VERIFIED',
+              'token': 'DELIBERATELY_INVALID',
+              'guard_writes': 0,
+              'service_mutations': 0,
+              'model_calls': 0,
+          }
+          if (platform.system() != 'Darwin' or platform.machine() not in
+                  ('arm64', 'aarch64') or os.getuid() != 501
+                  or os.geteuid() != 501):
+              print(json.dumps(result, sort_keys=True))
+              raise SystemExit(1)
+          conn = None
+          try:
+              conn = http.client.HTTPSConnection(
+                  host, 8454, timeout=6, context=ssl.create_default_context())
+              payload = 'token=invalid&confirmed=yes'
+              conn.request('POST', '/release/probe-post', body=payload,
+                           headers={
+                               'Origin': 'https://' + host + ':8454',
+                               'Content-Type': 'application/x-www-form-urlencoded',
+                               'Sec-Fetch-Site': 'same-origin',
+                               'Content-Length': str(len(payload)),
+                           })
+              reply = conn.getresponse()
+              body = reply.read(16385)
+              result['transport'] = 'HTTPS_RESPONSE_RECEIVED'
+              if len(body) <= 16384:
+                  if body.find(b'owner origin rejected') >= 0:
+                      result['gateway_gate'] = 'ORIGIN_REJECTED'
+                  elif body.find(b'owner verification unavailable') >= 0:
+                      result['gateway_gate'] = 'OWNER_UNAVAILABLE'
+                  elif body.find(b'host rejected') >= 0:
+                      result['gateway_gate'] = 'HOST_REJECTED'
+                  elif (reply.status == 403
+                        and body.find('POST通信の本人確認に失敗'.encode()) >= 0):
+                      result['gateway_gate'] = 'OWNER_AND_ORIGIN_PASSED_BAD_TOKEN'
+                  else:
+                      result['gateway_gate'] = 'OTHER_BOUNDED_RESPONSE'
+              result['http_status'] = reply.status
+              result['status'] = 'OWNER_ORIGIN_PROBE_OBSERVED_NO_EFFECT'
+          except (OSError, ValueError, TypeError, TimeoutError,
+                  http.client.HTTPException, ssl.SSLError):
+              result['transport'] = 'UNREACHABLE_OR_TLS_UNVERIFIED'
+          finally:
+              if conn is not None:
+                  conn.close()
+          print(json.dumps(result, sort_keys=True))
+          PY
+
+  owner-p0-operator-observation-noeffect:
+    # Bound to one owner Draft and its already-installed Gateway parent.
+    # Never stages a release, uses a model, claims Work, or touches Guard.
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.pull_request.number == 1507 &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/p0-mcp-operator-status-failclosed-20261121' &&
+      github.event.pull_request.base.ref == 'fix/postcutover-gateway-upstream-readback-20261120' &&
+      github.event.pull_request.base.sha == '15815926d09ef15d9b804603bfb99ae7c3f24c6e'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - name: Observe real Operator aggregate and Gateway upstream without writing
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import http.client, json, os, platform, ssl
+          result = {
+              "status": "M1_P0_READONLY_OBSERVATION",
+              "operator_api": "UNVERIFIED",
+              "gateway_upstream": "UNVERIFIED",
+              "runtime_status": "NOT_INFERRED",
+              "guard_writes": 0,
+              "service_mutations": 0,
+              "model_calls": 0,
+              "physical_android": "NOT_CHECKED",
+          }
+          if (platform.system() != "Darwin" or platform.machine() != "arm64"
+                  or os.getuid() != 501 or os.geteuid() != 501):
+              result["status"] = "NOT_OWNER_M1"
+              print(json.dumps(result, sort_keys=True))
+              raise SystemExit(2)
+          conn = http.client.HTTPConnection("127.0.0.1", 8766, timeout=3)
+          try:
+              conn.request("GET", "/api/human",
+                           headers={"Host": "127.0.0.1:8766"})
+              response = conn.getresponse()
+              data = response.read(524289)
+              if response.status == 200 and len(data) <= 524288:
+                  try:
+                      payload = json.loads(data)
+                      result["operator_api"] = (
+                          "HTTP_200_VALID_JSON" if type(payload) is dict
+                          else "HTTP_PROJECTION_UNVERIFIED")
+                  except (ValueError, TypeError):
+                      result["operator_api"] = "HTTP_PROJECTION_UNVERIFIED"
+              else:
+                  result["operator_api"] = "HTTP_UNAVAILABLE_OR_UNBOUNDED"
+          except (OSError, ValueError, http.client.HTTPException):
+              result["operator_api"] = "HTTP_UNAVAILABLE"
+          finally:
+              conn.close()
+          conn = http.client.HTTPSConnection(
+              "127.0.0.1", 8793, timeout=3,
+              context=ssl._create_unverified_context())
+          try:
+              conn.request("GET", "/health",
+                           headers={"Host": "127.0.0.1"})
+              response = conn.getresponse()
+              body = response.read(130)
+              if (response.status == 200
+                      and body in (b'{"ok":true,"upstream":true}\\n',
+                                   b'{"ok":true,"upstream":true}\n')):
+                  result["gateway_upstream"] = "OPERATOR_READY"
+              elif response.status == 503:
+                  result["gateway_upstream"] = "OPERATOR_UNAVAILABLE"
+              else:
+                  result["gateway_upstream"] = "HTTP_UNVERIFIED"
+          except (OSError, ValueError, http.client.HTTPException):
+              result["gateway_upstream"] = "HTTP_UNAVAILABLE"
+          finally:
+              conn.close()
+          print(json.dumps(result, sort_keys=True))
+          PY
+  owner-review-live-source-discriminator:
+    # Exact-owner no-effect observation; no source bytes, request text,
+    # Guard identifiers, private paths, model calls or service changes.
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.pull_request.number == 1509 &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/p0-review-source-unification-20261121' &&
+      github.event.pull_request.base.ref == 'fix/p0-mcp-operator-status-failclosed-20261121' &&
+      github.event.pull_request.base.sha == '92e9a7e643cfd028047cccb70d3f3b338b8cd79d'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact reviewed successor without stored credentials
+        uses: actions/checkout@v5
+        with:
+          path: .foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Diagnose installed Operator source and real CODE review contract without effect
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONPATH: src:scripts:.
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import http.client, json, os, platform, re, sys
+          from pathlib import Path
+          r={
+              "status":"OWNER_REVIEW_SOURCE_UNVERIFIED",
+              "read_only":True,
+              "guard_writes":0,"work_writes":0,
+              "model_calls":0,"service_mutations":0,
+              "owner_local_repo":"UNVERIFIED",
+              "guard_registry":"UNVERIFIED",
+              "original_guard_release":"UNVERIFIED",
+              "installed_source":"UNVERIFIED",
+              "same_git_history":"UNVERIFIED",
+              "pending_states":"UNVERIFIED",
+              "actual_live_review":"UNVERIFIED",
+          }
+          allowed=frozenset({
+              "VERIFIED","PREDECESSOR_IDENTITY_INVALID",
+              "PREDECESSOR_STAGE_NOT_FOUND","PREDECESSOR_STAGE_UNTRUSTED",
+              "PREDECESSOR_STAGE_UNVERIFIED","PREDECESSOR_MANIFEST_MISMATCH",
+              "PREDECESSOR_SCRIPT_HASH_CHANGED","RUNNING_PLIST_NOT_PREDECESSOR",
+              "INSTALLED_PREVIOUS_OPERATOR_RESTORED",
+              "LAUNCHD_RUNNING_COMMAND_UNVERIFIED","RUNNING_PID_NOT_BOUND",
+              "RUNNING_OPERATOR_API_UNAVAILABLE","PREDECESSOR_READBACK_UNVERIFIED",
+          })
+          try:
+              if (sys.platform!="darwin" or platform.machine() not in ("arm64","aarch64")
+                      or os.getuid()!=501 or os.geteuid()!=501):
+                  raise ValueError("NOT_OWNER_M1")
+              from scripts import m1_operator_release_cli as cli
+              from scripts import m1_development_review_candidate as candidate
+              from scripts.m1_development_owner_review import OwnerDevelopmentReview
+              from scripts.m1_development_ticket_factory import _owner_local_repo, _git
+              from scripts.m1_direct_development import installed_config
+              _, cfg, root = installed_config()
+              repo=_owner_local_repo()
+              r["owner_local_repo"]="OWNER_VERIFIED"
+              pending=OwnerDevelopmentReview(
+                  root,repo_factory=lambda:repo,work_db=cfg.work_db).pending_review_statuses()
+              by={}
+              for item in pending:
+                  state=item["state"]
+                  by[state]=by.get(state,0)+1
+              r["pending_states"]=dict(sorted(by.items()))
+              r["pending_count"]=len(pending)
+              try:
+                  gate=cli._guard_gate(Path.home(),readonly=True)
+                  record=gate.registry.get("m1-operator")
+                  if record is not None and getattr(record,"status",None)=="VERIFIED":
+                      r["guard_registry"]="CURRENT_VERIFIED_RECORD"
+                      authority=getattr(record,"candidate_authority",None)
+                      if isinstance(authority,str) and re.fullmatch(
+                          "github-commit:[0-9a-f]{40}",authority):
+                          sha=authority.removeprefix("github-commit:")
+                          stage=Path.home()/".ai-foundation-tunnel-sources"/sha
+                          try:
+                              cli._owner_staged_source(sha,Path.home(),stage)
+                              r["installed_source"]="STAGE_CLEAN"
+                              host=cli.FixedOperatorHost(stage,home=Path.home())
+                              observed=host.diagnose_current_release(record)
+                              r["original_guard_release"]=(
+                                  observed if observed in allowed else "UNVERIFIED")
+                              common=lambda path: Path(_git(path,"rev-parse","--git-common-dir"))
+                              def canonical(path):
+                                  val=common(path)
+                                  return (val if val.is_absolute() else path/val).resolve(strict=True)
+                              r["same_git_history"]=(
+                                  "YES" if canonical(repo)==canonical(stage) else "NO")
+                          except (OSError,ValueError,PermissionError,RuntimeError):
+                              r["installed_source"]="STAGE_UNVERIFIED"
+                  else:
+                      r["guard_registry"]="CURRENT_VERIFIED_RECORD_UNAVAILABLE"
+              except (OSError,ValueError,PermissionError,RuntimeError):
+                  r["guard_registry"]="REGISTRY_SELECTION_UNVERIFIED"
+              conn=http.client.HTTPConnection("127.0.0.1",8766,timeout=4)
+              try:
+                  conn.request("GET","/development/review",headers={
+                      "Host":"127.0.0.1:8766"})
+                  response=conn.getresponse()
+                  body=response.read(98305)
+                  if response.status==200 and len(body)<=98304:
+                      html=body.decode("utf-8")
+                      r["actual_live_review"]="HTTP_200"
+                      r["actual_live_preview_button_count"]=len(re.findall(
+                          r'の内容を確認</button>',html))
+                  else:
+                      r["actual_live_review"]="NOT_200_OR_UNBOUNDED"
+              except (OSError,ValueError,UnicodeDecodeError,http.client.HTTPException):
+                  r["actual_live_review"]="HTTP_UNAVAILABLE"
+              finally:conn.close()
+              r["status"]="OWNER_REVIEW_SOURCE_OBSERVED_NO_EFFECT"
+          except (OSError,ValueError,PermissionError,RuntimeError,ImportError):
+              pass
+          print(json.dumps(r,sort_keys=True))
+          PY

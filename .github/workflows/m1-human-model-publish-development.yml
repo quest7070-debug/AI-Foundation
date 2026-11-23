@@ -1,0 +1,37 @@
+name: M1 explicit development sources and owner binding
+on:
+  push:
+    branches: [feat/human-model-explicit-source-publication-20261103]
+    paths:
+      - experiments/human_model/development_sources.py
+      - experiments/human_model/cognee_memory.py
+      - experiments/human_model/cognee_bridge.py
+      - scripts/m1_human_model_publish_development.py
+      - .github/workflows/m1-human-model-publish-development.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: human-model-source-publication
+  cancel-in-progress: true
+jobs:
+  publish-explicit-project-sources:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Publish supplied project instructions and verify owner-bound Cognee retrieval
+        shell: bash
+        env:
+          PYTHONPATH: src
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          for candidate in /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3; do
+            if [[ -x "$candidate" ]] && "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,12) else 1)'; then
+              "$candidate" -B scripts/m1_human_model_publish_development.py
+              "$candidate" -B scripts/m1_human_model_activation_readiness.py
+              exit 0
+            fi
+          done
+          exit 2

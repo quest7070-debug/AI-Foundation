@@ -1,0 +1,40 @@
+name: Foundation M1 local9B false contention release
+
+# Owner-only, one-shot exact release; no normal PR/CI-driven production effects.
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: foundation-m1-local9b-admission-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.pull_request.number == 561 &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/local9b-admission-false-contention-20261110' &&
+      github.event.label.name == 'foundation-local9b-admission-once'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 6
+    steps:
+      - name: Checkout exact reviewed worker-only release controller
+        uses: actions/checkout@v5
+        with:
+          ref: 2ebe499e134e4435530aed561c8a721c509dc91a
+          persist-credentials: false
+      - name: Authorize with existing Guard and switch only idle local9B worker
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_HANDLER_SHA: 2ebe499e134e4435530aed561c8a721c509dc91a
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: /opt/homebrew/bin/python3.12 -B scripts/m1_local9b_admission_release.py

@@ -1,0 +1,9 @@
+# Bounded CODE development loop
+
+Existing `CodingSpecialist.develop` now connects a host-bound proposal AgentPort, existing CapabilityAgentTools/Guard writes, independent host-selected TestPort, failure feedback and at most two repairs. Default: one repair. No new task/session manager, memory admission or provider fallback.
+
+Use a proposal-only agent with no write tools. The trusted host must select its already authorized local provider, isolated execution environment and fixed acceptance test. Model text supplies only replacement source; it cannot select write/test targets or commands. Guard denial, unverified write, readback drift and repeated source stop the loop. RuntimeError from the test port denotes test failure; transport/timeouts must use distinct exception types and propagate. The host publisher is optional; DRAFT_PR_PRESENTED denotes a nonempty publisher return, not independent GitHub readback or task closeout. Existing closeout/Native acceptance remains required.
+
+Validation: four focused local Linux unittest cases, 4/4 PASS, 0.097s: actual GuardCore/CapabilityAgentTools, real temp-file writes and fixed subprocess acceptance; failing first candidate, corrected second candidate, distinct effect IDs, publisher fixture; exhausted budget/no progress; cancelled Guard; independent acceptance target. Agent outputs and Draft publisher are fixtures. No real LLM/9B/Harness, GitHub publisher, M1 Native execution or production integration is claimed.
+
+Remaining integration: live trusted Native/Harness owner must invoke `develop` with a proposal-only local AgentPort, pinned independent test runner, and existing Git/Draft publication implementation, then independently read back resulting head/PR. This patch does not enable a service, merge main, use 4B, send a Native signal, install a model or call paid APIs.

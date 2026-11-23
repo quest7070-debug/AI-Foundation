@@ -1,0 +1,173 @@
+name: Foundation M1 HumanModel synthetic 9B E2E
+
+# A new exact owner-authored Issue is an inert one-shot request, never a prompt,
+# model selector, owner identity, authorization or command supplied by GitHub.
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+# GitHub Actions keeps at most one pending run per concurrency group.
+# A constant group let unrelated Issue-opened events replace a queued owner
+# 9B run even when all jobs in the unrelated run were skipped. Each
+# authenticated Issue has a unique owner-controlled number; host compute lease
+# still enforces one local 9B inference at a time.
+concurrency:
+  group: foundation-humanmodel-synthetic-9b-e2e-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  owner-local-stdlib-9b-smoke:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      github.event.issue.title == 'Foundation M1 9B stdlib real smoke'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 6
+    steps:
+      - name: Checkout event-time trusted default-branch source only
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: One owner-approved 9B request without uv, pip or Pydantic
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B scripts/m1_local9b_fast_owner_probe.py
+
+  owner-prepare-hm-pinned-runtime:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      github.event.issue.title == 'Foundation M1 HumanModel: prepare frozen local runtime'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 8
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Exact owner authorization and private environment path
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B scripts/m1_humanmodel_pinned_env.py preflight
+      - name: Install frozen dependencies once without model inference
+        id: frozen-sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          python=/opt/homebrew/bin/python3.12
+          test -x "$python"
+          version=0.8.22
+          archive=uv-aarch64-apple-darwin.tar.gz
+          expected=3f61099e261e449527141dbf125629fab33ad696468c8c90cebbac40185a306c
+          mkdir -p .tools/uv
+          curl --fail --location --silent --show-error --retry 2 --retry-delay 2 \
+            "https://github.com/astral-sh/uv/releases/download/$version/$archive" \
+            -o ".tools/uv/$archive"
+          actual="$(shasum -a 256 ".tools/uv/$archive" | awk '{print $1}')"
+          test "$actual" = "$expected"
+          tar -xzf ".tools/uv/$archive" -C .tools/uv
+          uv="$PWD/.tools/uv/uv-aarch64-apple-darwin/uv"
+          test -x "$uv"
+          [[ "$("$uv" --version)" =~ ^uv[[:space:]]0[.]8[.]22([[:space:]]|$) ]]
+          export UV_PROJECT_ENVIRONMENT="$HOME/Library/Application Support/AI-Foundation/humanmodel-pinned/venv"
+          export UV_CACHE_DIR="$RUNNER_TEMP/humanmodel-setup-$GITHUB_RUN_ID"
+          /opt/homebrew/bin/python3.12 -B scripts/host_compute_lease.py run --max-wait-seconds 45 -- \
+            "$uv" sync --frozen --no-dev --no-install-project --python "$python" \
+            >/dev/null 2>&1
+      - name: Read back exact isolated dependency environment
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: '1'
+          FOUNDATION_HM_SYNC_OUTCOME: ${{ steps.frozen-sync.outcome }}
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B scripts/m1_humanmodel_pinned_env.py finalize
+
+  owner-local-real-view-fast:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      github.event.issue.title == 'Foundation HumanModel 9B E2E: current approved view'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 7
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Reuse only installed Operator Python (no uv/pip/other model)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: src:scripts:experiments/human_model
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          /opt/homebrew/bin/python3.12 -B scripts/m1_owner_humanmodel_fast_entry.py
+
+  owner-local-synthetic-answer:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      (github.event.issue.title == 'Foundation HumanModel 9B E2E: synthetic owner answer' ||
+       github.event.issue.title == 'Foundation Local 9B E2E: shared chat route')
+    runs-on: [self-hosted, macOS, ARM64]
+    # Includes a bounded 75s CPU-load cool-down after pinned dependency setup.
+    timeout-minutes: 7
+    steps:
+      - name: Checkout event-time trusted default-branch source only
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Restore exact frozen Python dependencies (no inherited venv)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python=/opt/homebrew/bin/python3.12
+          test -x "$python"
+          "$python" -c 'import sys; assert sys.version_info >= (3,12)'
+          version=0.8.22
+          archive=uv-aarch64-apple-darwin.tar.gz
+          expected=3f61099e261e449527141dbf125629fab33ad696468c8c90cebbac40185a306c
+          mkdir -p .tools/uv
+          curl --fail --location --silent --show-error --retry 2 --retry-delay 2 \
+            "https://github.com/astral-sh/uv/releases/download/$version/$archive" \
+            -o ".tools/uv/$archive"
+          actual="$(shasum -a 256 ".tools/uv/$archive" | awk '{print $1}')"
+          test "$actual" = "$expected"
+          tar -xzf ".tools/uv/$archive" -C .tools/uv
+          uv="$PWD/.tools/uv/uv-aarch64-apple-darwin/uv"
+          test -x "$uv"
+          [[ "$("$uv" --version)" =~ ^uv[[:space:]]0[.]8[.]22([[:space:]]|$) ]]
+          export UV_CACHE_DIR="$RUNNER_TEMP/hm9b-uv-$GITHUB_RUN_ID"
+          mkdir -p "$UV_CACHE_DIR"
+          "$uv" sync --frozen --python "$python"
+      - name: Owner-bound real 9B with synthetic disposable HumanModel View
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: src:scripts:experiments/human_model
+          PYTHONDONTWRITEBYTECODE: '1'
+          FOUNDATION_OWNER_ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: |
+          set -euo pipefail
+          test -x .venv/bin/python
+          .venv/bin/python -c 'import pydantic_ai'
+          if [[ "$FOUNDATION_OWNER_ISSUE_TITLE" == 'Foundation HumanModel 9B E2E: current approved view' ]]; then
+            .venv/bin/python -B scripts/host_compute_lease.py run --max-wait-seconds 45 -- .venv/bin/python -B scripts/m1_owner_humanmodel_real_e2e.py
+          else
+            .venv/bin/python -B scripts/host_compute_lease.py run --max-wait-seconds 45 -- .venv/bin/python -B scripts/m1_humanmodel_9b_synthetic_e2e.py
+          fi

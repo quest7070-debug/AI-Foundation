@@ -1,0 +1,41 @@
+name: Foundation M1 Strata current CODE availability (no inference)
+
+# Exact owner PR #1419 only. Reads locally configured MainPC /v1/models
+# without requesting completions, model wake, paid services or code delivery.
+on:
+  pull_request:
+    types: [synchronize]
+    paths:
+      - "scripts/m1_strata_runtime_probe.py"
+      - "tests/test_m1_strata_runtime_probe.py"
+      - ".github/workflows/m1-strata-code-discovery.yml"
+permissions:
+  contents: read
+concurrency:
+  group: foundation-m1-strata-code-discovery
+  cancel-in-progress: false
+jobs:
+  current-strata-discovery:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.pull_request.number == 1419 &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/owner-klm-review-code-withdrawal-20261117'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 4
+    steps:
+      - name: Checkout exact reviewed source with no persistent token
+        uses: actions/checkout@v5
+        with:
+          path: .foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Probe current configured Strata CODE model without inference
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONPATH: src:scripts:.
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B scripts/m1_strata_runtime_probe.py

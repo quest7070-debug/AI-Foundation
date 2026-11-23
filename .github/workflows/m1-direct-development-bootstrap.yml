@@ -1,0 +1,68 @@
+name: Foundation M1 direct development r2 one-time bootstrap
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: foundation-direct-development-bootstrap
+  cancel-in-progress: false
+jobs:
+  bootstrap:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      github.event.issue.title == 'Foundation M1 direct development bootstrap r2' &&
+      github.event.issue.body == '<!-- foundation-direct-bootstrap:20261114:r2 -->'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install owner-local MCP launcher and attempt one bounded public task
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          /opt/homebrew/bin/python3.12 -B - <<'PY'
+          import json, os, subprocess, urllib.request
+          from pathlib import Path
+          event=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+          issue=event['issue']
+          base='https://api.github.com/repos/quest7070-dev/AI-Foundation/issues/'+str(issue['number'])
+          headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'Accept':'application/vnd.github+json'}
+          def api(url, body=None):
+              req=urllib.request.Request(url,headers=headers,data=None if body is None else json.dumps(body).encode())
+              with urllib.request.urlopen(req,timeout=15) as response:
+                  return json.loads(response.read(262144))
+          live=api(base)
+          assert live['state']=='open' and live['user']['login']=='quest7070-debug'
+          assert live['title']==issue['title']=='Foundation M1 direct development bootstrap r2'
+          assert live['body']==issue['body']=='<!-- foundation-direct-bootstrap:20261114:r2 -->'
+          marker='<!-- foundation-direct-bootstrap-receipt:v2:'+str(issue['number'])+' -->'
+          comments=api(base+'/comments?per_page=100')
+          assert len(comments)<100
+          if any(c['user']['login']=='github-actions[bot]' and marker in c['body'] for c in comments):
+              raise SystemExit('ALREADY_RECORDED')
+          python=Path.home()/'Develop/AI-Foundation/.venv/bin/python'
+          child=subprocess.run([str(python),'-B','scripts/m1_direct_development.py','install-run'],
+                               capture_output=True,text=True,timeout=750)
+          try:
+              observed=json.loads(child.stdout)
+          except ValueError:
+              observed={'status':'BOOTSTRAP_PROCESS_UNVERIFIED'}
+          allowed={'status','model_calls','error_type','ticket_id','revision','ticket_started',
+                   'github_in_run_loop','ticket','installation','state','github_published',
+                   'source_sha256','execution_binding','durable_readback_matches','replay_readonly',
+                   'execution_timeout_seconds',
+                   'cloud_chatgpt_muse_connection_verified'}
+          def safe(row):
+              return {k:safe(v) if isinstance(v,dict) else v for k,v in row.items() if k in allowed}
+          report=safe(observed)
+          api(base+'/comments',{'body':marker+'\n```json\n'+json.dumps(report,sort_keys=True,indent=2)+'\n```'})
+          print(json.dumps(report,sort_keys=True))
+          PY

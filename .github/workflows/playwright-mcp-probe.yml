@@ -1,0 +1,244 @@
+name: Playwright MCP Probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playwright-mcp-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          npm --version
+          npx --version
+      - name: Provision canonical ToolHive
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh ./scripts/bootstrap-toolhive.sh
+          thv="$GITHUB_WORKSPACE/.tools/toolhive/thv"
+          echo "TOOLHIVE_BIN=$thv" >> "$GITHUB_ENV"
+          "$thv" version
+      - name: Inspect pinned Playwright MCP
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .probe/playwright-mcp
+          mkdir -p .probe/playwright-mcp
+          cd .probe/playwright-mcp
+          npm init -y >/dev/null
+          npm install --ignore-scripts --save-exact @playwright/mcp@0.0.82
+          node -e 'const p=require("./node_modules/@playwright/mcp/package.json"); if(p.version!=="0.0.82") process.exit(1); console.log(JSON.stringify({name:p.name,version:p.version,engines:p.engines,bin:p.bin,dependencies:p.dependencies},null,2))'
+          ./node_modules/.bin/playwright-mcp --help | tee help.txt
+          grep -q -- '--no-webmcp' help.txt
+      - name: Record ToolHive compatibility surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$TOOLHIVE_BIN" run --help
+          "$TOOLHIVE_BIN" registry list | grep -i playwright || true
+          "$TOOLHIVE_BIN" registry info playwright || true
+      - name: Verify upstream Playwright container baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="mcr.microsoft.com/playwright/mcp:v0.0.79"
+          name="ai-foundation-playwright-upstream-baseline"
+          docker rm -f "$name" >/dev/null 2>&1 || true
+          trap 'docker rm -f "$name" >/dev/null 2>&1 || true' EXIT
+          docker run -d -i --init --name "$name" "$image" >/tmp/ai-foundation-playwright-container.id
+          sleep 3
+          docker inspect "$name" --format 'status={{.State.Status}} running={{.State.Running}} exit={{.State.ExitCode}} restart={{.RestartCount}} image={{.Config.Image}}'
+          image_id="$(docker inspect "$name" --format '{{.Image}}')"
+          repo_digest="$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')"
+          expected_digest="mcr.microsoft.com/playwright/mcp@sha256:435e737f4b9122477d792f3a1f3825a6cf87366fb3ca70b10d0eff130adc3f81"
+          test -n "$image_id"; test "$repo_digest" = "$expected_digest"
+          test "$image_id" = "sha256:435e737f4b9122477d792f3a1f3825a6cf87366fb3ca70b10d0eff130adc3f81"
+          printf 'PLAYWRIGHT_IMAGE_ID=%s\nPLAYWRIGHT_REPO_DIGEST=%s\n' "$image_id" "$repo_digest"
+          docker logs "$name" || true
+          test "$(docker inspect "$name" --format '{{.State.Running}}')" = "true"
+
+      - name: Probe real ToolHive Playwright workload
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="ai-foundation-playwright-probe"
+          cleanup() { "$TOOLHIVE_BIN" rm "$name" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          cleanup
+          rm -f "$HOME/Library/Application Support/toolhive/logs/$name.log"
+          profile="$RUNNER_TEMP/playwright-network-profile.json"
+          cat >"$profile" <<'JSON'
+          {
+            "name": "playwright-probe",
+            "network": {
+              "outbound": {
+                "insecure_allow_all": false,
+                "allow_host": ["example.com"],
+                "allow_port": [443]
+              }
+            }
+          }
+          JSON
+          "$TOOLHIVE_BIN" run "io.github.stacklok/playwright" --name "$name" --permission-profile "$profile" --image-verification warn >/tmp/ai-foundation-playwright-run.log 2>&1 &
+          run_pid=$!
+          for _ in $(seq 1 180); do
+            if "$TOOLHIVE_BIN" status "$name" 2>/dev/null | grep -qi 'Status: *running'; then
+              break
+            fi
+            if ! kill -0 "$run_pid" 2>/dev/null; then
+              wait "$run_pid" || true
+              # thv run may detach successfully; process exit alone is not workload failure.
+              if "$TOOLHIVE_BIN" status "$name" 2>/dev/null | grep -qi 'Status: *running'; then
+                break
+              fi
+            fi
+            sleep 1
+          done
+          status="$("$TOOLHIVE_BIN" status "$name" 2>&1 || true)"
+          printf '%s\n' "$status"
+          isolation="$(docker inspect "$name" --format '{{ index .Config.Labels "toolhive-network-isolation" }}')"
+          network_mode="$(docker inspect "$name" --format '{{.HostConfig.NetworkMode}}')"
+          printf 'toolhive-network-isolation=%s network-mode=%s\n' "$isolation" "$network_mode"
+          test "$isolation" = "true"
+          test "$network_mode" != "host"
+          test "$network_mode" != "none"
+          docker network inspect "toolhive-$name-internal" --format 'internal={{.Internal}}'
+          test "$(docker network inspect "toolhive-$name-internal" --format '{{.Internal}}')" = "true"
+          if ! printf '%s\n' "$status" | grep -qi 'Status: *running'; then
+            cat /tmp/ai-foundation-playwright-run.log || true
+            log="$HOME/Library/Application Support/toolhive/logs/$name.log"
+            test ! -f "$log" || { echo "=== ToolHive workload log ==="; cat "$log"; }
+            exit 1
+          fi
+          # RUNNING is transitional; require ToolHive to accept MCP inventory before declaring readiness.
+          ready=false
+          for _ in $(seq 1 30); do
+            if "$TOOLHIVE_BIN" mcp list --server "$name" --format json >/tmp/ai-foundation-playwright-tools.json 2>/tmp/ai-foundation-playwright-mcp.err; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then
+            "$TOOLHIVE_BIN" status "$name" || true
+            echo "=== ToolHive run output ==="
+            cat /tmp/ai-foundation-playwright-run.log || true
+            echo "=== MCP inventory error ==="
+            cat /tmp/ai-foundation-playwright-mcp.err || true
+            log="$HOME/Library/Application Support/toolhive/logs/$name.log"
+            test ! -f "$log" || { echo "=== ToolHive workload log ==="; cat "$log"; }
+            exit 1
+          fi
+          cat /tmp/ai-foundation-playwright-tools.json
+          echo "=== bounded egress behavior ==="
+          "$TOOLHIVE_BIN" mcp call browser_navigate --server "$name" --format json --args '{"url":"https://example.com/"}' >/tmp/playwright-allowed.json
+          cat /tmp/playwright-allowed.json
+          "$TOOLHIVE_BIN" mcp call browser_snapshot --server "$name" --format json --args '{}' >/tmp/playwright-allowed-snapshot.json
+          grep -q 'Example Domain' /tmp/playwright-allowed-snapshot.json
+          if "$TOOLHIVE_BIN" mcp call browser_navigate --server "$name" --format json --timeout 15s --args '{"url":"https://example.org/"}' >/tmp/playwright-denied.json 2>/tmp/playwright-denied.err; then
+            echo "non-allowed origin unexpectedly succeeded"
+            cat /tmp/playwright-denied.json
+            exit 1
+          fi
+          cat /tmp/playwright-denied.err || true
+          echo "PLAYWRIGHT_BOUNDED_EGRESS_OK"
+          echo "=== file/storage containment ==="
+          mounts="$(docker inspect "$name" --format '{{json .Mounts}}')"
+          printf 'mounts=%s\n' "$mounts"
+          test "$mounts" = "[]"
+          if "$TOOLHIVE_BIN" mcp call browser_navigate --server "$name" --format json --timeout 15s --args '{"url":"file:///etc/passwd"}' >/tmp/playwright-file-denied.json 2>/tmp/playwright-file-denied.err; then
+            if grep -q 'root:' /tmp/playwright-file-denied.json; then
+              echo "file URL exposed host/container file content"; exit 1
+            fi
+          fi
+          echo "PLAYWRIGHT_FILE_SCOPE_OK"
+          echo "=== Foundation composed runtime path ==="
+          PYTHONPATH=src AI_FOUNDATION_TOOLHIVE_ROOT="$GITHUB_WORKSPACE" AI_FOUNDATION_BROWSER_SERVER="$name" /opt/homebrew/bin/python3.12 - <<'PY'
+          import json, tempfile
+          from pathlib import Path
+          from types import SimpleNamespace
+          from ai_foundation.capability_composition import build_capability_composition
+          from ai_foundation.capability_request import CapabilityRequest
+          root=Path(tempfile.mkdtemp())
+          comp=build_capability_composition(repo_base=Path.cwd(),data_root=root,config=SimpleNamespace(toolhive_server="unused"),inference=None,guard=None,reconciliation_registry=None,thv_path=Path(".tools/toolhive/thv"))
+          req=CapabilityRequest("BROWSER",browser_target="browser-main")
+          out=json.loads(comp.executor.execute(req,json.dumps({"tool":"browser_snapshot","args":{}}),"playwright-real-host"))
+          content=out.get("content",[])
+          if not isinstance(content,list) or not content:
+              raise SystemExit("Foundation composed BROWSER returned no MCP content")
+          if not all(isinstance(x,dict) and x.get("type") in {"text","image","resource","resource_link"} for x in content):
+              raise SystemExit("Foundation composed BROWSER returned invalid MCP content")
+          print("PLAYWRIGHT_FOUNDATION_OBSERVATION_OK")
+          try:
+              comp.executor.execute(req,json.dumps({"tool":"browser_navigate","args":{"url":"https://example.com/"}}),"playwright-denied")
+          except PermissionError:
+              pass
+          else:
+              raise SystemExit("Foundation observational grant unexpectedly allowed navigation")
+          print("PLAYWRIGHT_FOUNDATION_COMPOSED_E2E_OK")
+          PY
+          echo "=== stale inventory / restart fail-closed ==="
+          docker stop "$name" >/dev/null
+          if "$TOOLHIVE_BIN" mcp call browser_snapshot --server "$name" --format json --args '{}' >/tmp/playwright-stale.json 2>/tmp/playwright-stale.err; then
+            echo "stopped workload unexpectedly accepted MCP call"; exit 1
+          fi
+          echo "PLAYWRIGHT_STOP_FAIL_CLOSED_OK"
+          echo "=== restart / reconnect ==="
+          # ToolHive owns workload lifecycle; a raw docker restart leaves ToolHive state at STARTING.
+          # Prove supported recovery by removing/recreating the same bounded workload instead.
+          "$TOOLHIVE_BIN" rm "$name" >/dev/null 2>&1 || true
+          "$TOOLHIVE_BIN" run "io.github.stacklok/playwright" --name "$name" --permission-profile "$profile" --image-verification warn >/tmp/ai-foundation-playwright-restart.log 2>&1 &
+          restarted=false
+          for _ in $(seq 1 180); do
+            if "$TOOLHIVE_BIN" mcp list --server "$name" --format json >/tmp/playwright-restarted-tools.json 2>/tmp/playwright-restarted.err; then restarted=true; break; fi
+            sleep 1
+          done
+          if [ "$restarted" != true ]; then cat /tmp/ai-foundation-playwright-restart.log || true; cat /tmp/playwright-restarted.err || true; exit 1; fi
+          "$TOOLHIVE_BIN" mcp call browser_snapshot --server "$name" --format json --args '{}' >/tmp/playwright-restarted-snapshot.json
+          echo "PLAYWRIGHT_RECREATE_RECONNECT_OK"
+          python3 - <<'PY'
+          import json
+          with open("/tmp/ai-foundation-playwright-tools.json") as f:
+              payload=json.load(f)
+          tools=payload.get("tools")
+          if not isinstance(tools,list) or not tools:
+              raise SystemExit("empty/invalid Playwright MCP inventory")
+          by_name={item.get("name"): item for item in tools if isinstance(item,dict) and item.get("name")}
+          for name in sorted(by_name):
+              print(name)
+          expected_read_only={
+              "browser_console_messages",
+              "browser_network_request",
+              "browser_network_requests",
+              "browser_snapshot",
+              "browser_take_screenshot",
+              "browser_wait_for",
+          }
+          missing=expected_read_only-set(by_name)
+          if missing:
+              raise SystemExit(f"missing expected observational Playwright tools: {sorted(missing)}")
+          for name in sorted(expected_read_only):
+              annotations=by_name[name].get("annotations") or {}
+              if annotations.get("readOnlyHint") is not True or annotations.get("destructiveHint") is not False:
+                  raise SystemExit(f"unsafe observational annotation for {name}: {annotations}")
+          unsafe=by_name.get("browser_run_code_unsafe")
+          if not unsafe:
+              raise SystemExit("missing browser_run_code_unsafe inventory evidence")
+          unsafe_annotations=unsafe.get("annotations") or {}
+          if unsafe_annotations.get("readOnlyHint") is not False or unsafe_annotations.get("destructiveHint") is not True:
+              raise SystemExit(f"unexpected unsafe-tool annotations: {unsafe_annotations}")
+          print("PLAYWRIGHT_SCHEMA_CLASSIFICATION_OK")
+          PY

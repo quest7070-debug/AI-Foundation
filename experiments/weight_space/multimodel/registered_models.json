@@ -1,0 +1,107 @@
+{
+  "schema": "weight-space-existing-model-registry/v1",
+  "observed_at": "2026-11-05 JST",
+  "observation": "Read-only M1 Ollama /api/tags, /api/ps, /api/show at localhost 11434. Registration/capabilities are metadata, not an inference result.",
+  "ollama_version": "0.34.4",
+  "host": "Apple M1 / 16 GiB",
+  "live_model_service_modified": false,
+  "registered_models": [
+    {
+      "model": "qwen3.5:2b",
+      "digest": "324d162be6ca5629ae4517c8710434d0bd2d665bc94dbad46e9af8fbf8a2f0df",
+      "bytes": 2741192820,
+      "family": "qwen35",
+      "quantization": "Q8_0",
+      "capabilities": [
+        "completion",
+        "vision",
+        "tools",
+        "thinking"
+      ],
+      "status": "REGISTERED_UNTESTED",
+      "planning_class": "PRIMARY_NON4B",
+      "storage_benchmark": "NOT_MEASURED",
+      "format_schema_support": "NOT_MEASURED",
+      "structure": {
+        "architecture": "qwen35",
+        "parameter_count": 2274069824,
+        "block_count": 24,
+        "embedding_length": 2048,
+        "feed_forward_length": 6144,
+        "attention_heads": 8,
+        "attention_kv_head_schedule": "2 heads on every fourth full-attention block; remaining entries 0 as recorded in /api/show",
+        "rope_dimension_sections": [
+          11,
+          11,
+          10
+        ],
+        "gguf_file_type": 7
+      }
+    },
+    {
+      "model": "qwen3.5:9b",
+      "digest": "56671c2ab9385f9cfcb404638e32cd62d88e3501d44822208363c010179a3c90",
+      "bytes": 6550825550,
+      "family": "qwen35",
+      "quantization": "Q4_K_M",
+      "capabilities": [
+        "completion",
+        "vision",
+        "tools",
+        "thinking"
+      ],
+      "status": "REGISTERED_PARTIAL_PRIOR_9B",
+      "planning_class": "PRIMARY_NON4B",
+      "storage_benchmark": "Separate PR #199: native internal APFS isolated 9B model-call PASS; live external store encountered timeouts. Full-agent or JSON-schema A/B remains untested.",
+      "format_schema_support": "NOT_MEASURED",
+      "structure": {
+        "architecture": "qwen35",
+        "parameter_count": 8953803264,
+        "block_count": 32,
+        "embedding_length": 4096,
+        "feed_forward_length": 12288,
+        "attention_heads": 16,
+        "attention_kv_heads": 4,
+        "rope_dimension_sections": [
+          11,
+          11,
+          10,
+          0
+        ],
+        "gguf_file_type": 15
+      }
+    },
+    {
+      "model": "qwen3:4b",
+      "digest": "359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7",
+      "bytes": 2497293931,
+      "family": "qwen3",
+      "quantization": "Q4_K_M",
+      "capabilities": [
+        "completion",
+        "tools",
+        "thinking"
+      ],
+      "status": "REGISTERED_UNTESTED",
+      "planning_class": "SEPARATE_4B_FAMILY_CONTROL",
+      "storage_benchmark": "NOT_MEASURED",
+      "format_schema_support": "NOT_MEASURED",
+      "structure": {
+        "architecture": "qwen3",
+        "parameter_count": 4022468096,
+        "block_count": 36,
+        "embedding_length": 2560,
+        "feed_forward_length": 9728,
+        "attention_heads": 32,
+        "attention_kv_heads": 8,
+        "rope_dimension_sections": "not qwen35",
+        "gguf_file_type": 15
+      }
+    }
+  ],
+  "production_routing": "NOT_AUTHORIZED",
+  "offline_only": true,
+  "new_downloads": 0,
+  "inference_calls": 0,
+  "structure_source": "Read-only Ollama /api/show model_info; metadata only. Original Ollama blobs were not parsed or modified here."
+}

@@ -1,0 +1,98 @@
+name: Foundation M1 KLM LLMPerks immutable semantic atom journal readback
+
+on:
+  push:
+    branches: [ops/klm-nonworker-release-20261110]
+    paths:
+      - '.github/workflows/m1-klm-llmperks-atom-journal-accept.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  independent-semantic-journal:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.head_commit.message == 'test(m1): independently verify LLMPerks 9B atom journal'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: c05d04c70344ccb8ab0fd33284e9c98db062b67e
+          persist-credentials: false
+      - name: Join source-bound VERIFIED Work to actual persisted KLM atom and feature rows
+        shell: bash
+        env:
+          PYTHONPATH: src:.
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = c05d04c70344ccb8ab0fd33284e9c98db062b67e
+          /opt/homebrew/bin/python3 -B - <<'PY'
+          import json, re, sqlite3
+          from pathlib import Path
+          from scripts.m1_klm_status_probe import _fixed_service_paths, _json_owner, MAX_CONFIG
+          from scripts.klm_drive_host_tick import existing_work_db
+          from ai_foundation.klm_drive_input import digest
+          _, cfgpath = _fixed_service_paths(Path.home())
+          cfg,_ = _json_owner(cfgpath, MAX_CONFIG)
+          foundation = Path(cfg["foundation_root"])
+          config = json.loads((foundation / "config.json").read_text())
+          dbpath = existing_work_db(config, foundation)
+          with sqlite3.connect("file:"+str(dbpath)+"?mode=ro",uri=True,timeout=4) as db:
+              db.row_factory = sqlite3.Row
+              works = db.execute("""
+                  SELECT w.status,w.result,i.source_revision,i.record_id
+                  FROM klm_drive_intake i
+                  JOIN work_steps w ON i.job_id=w.job_id
+                  WHERE i.source_id='llmperks-owner-research' AND w.name='klm-readonly'
+                  ORDER BY i.created DESC LIMIT 20
+                  """).fetchall()
+              if not 1 <= len(works) <= 20:
+                  raise ValueError("RESEARCH_SOURCE_WORK_MISSING")
+              verified = 0
+              for work in works:
+                  if work["status"] != "VERIFIED":
+                      continue
+                  record = json.loads(work["result"])
+                  revision = work["source_revision"]
+                  sha = record.get("source_sha256")
+                  ref = record.get("result_ref")
+                  if (record.get("execution_authority") is not False
+                      or record.get("source_revision")!=revision
+                      or not isinstance(sha,str) or re.fullmatch("[a-f0-9]{64}",sha) is None
+                      or not isinstance(ref,str) or not ref.startswith("klm-atoms-sha256:")):
+                      raise ValueError("VERIFIED_WORK_RECEIPT_UNTRUSTED")
+                  rows = db.execute("""
+                      SELECT a.atom_id,a.span_sha256,a.meaning_sha256,
+                             a.byte_start,a.byte_end,f.atom_id as feature_id
+                      FROM klm_atoms a
+                      LEFT JOIN klm_atom_features f ON a.atom_id=f.atom_id
+                      WHERE a.system='gdrive'
+                        AND a.resource_id='llmperks-owner-research'
+                        AND a.record_id=? AND a.revision=? AND a.source_sha256=?
+                        AND a.scope='drive-public-research' AND a.privacy='private'
+                      ORDER BY a.rowid
+                      """,(work["record_id"],revision,sha)).fetchall()
+                  if not 1 <= len(rows) <= 8:
+                      raise ValueError("RESEARCH_SEMANTIC_ATOMS_MISSING")
+                  atom_ids = []
+                  for row in rows:
+                      if (not row["feature_id"] or row["feature_id"]!=row["atom_id"]
+                          or row["byte_start"]<0 or row["byte_end"]<=row["byte_start"]
+                          or not re.fullmatch("[a-f0-9]{64}",row["span_sha256"])
+                          or not re.fullmatch("[a-f0-9]{64}",row["meaning_sha256"])):
+                          raise ValueError("RESEARCH_ATOM_OR_FEATURE_INVALID")
+                      atom_ids.append(row["atom_id"])
+                  if ref != "klm-atoms-sha256:"+digest(atom_ids):
+                      raise ValueError("RESEARCH_ATOM_LIST_DIGEST_MISMATCH")
+                  verified += 1
+                  print("RESEARCH_SOURCE_SEMANTIC_ATOMS="+str(len(rows)))
+              if verified < 1:
+                  raise ValueError("RESEARCH_SEMANTIC_WORK_NOT_VERIFIED")
+              print("RESEARCH_SOURCE_VERIFIED_WORK="+str(verified))
+              print("RESEARCH_ATOM_JOURNAL_INDEPENDENT_READBACK=VERIFIED")
+              print("PRODUCTION_DB_WRITES=0")
+              print("MODEL_CALLS=0")
+          PY

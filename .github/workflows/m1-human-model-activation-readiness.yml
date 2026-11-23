@@ -1,0 +1,44 @@
+name: M1 HumanModel real activation readiness (read-only)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - scripts/m1_human_model_activation_readiness.py
+      - src/ai_foundation/human_model_context.py
+      - src/ai_foundation/auto_agent.py
+      - src/ai_foundation/mcp_host.py
+      - .github/workflows/m1-human-model-activation-readiness.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: humanmodel-activation-readiness-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  inspect-existing-owner-view-runtime:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.user.login == 'quest7070-debug')
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: .foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          persist-credentials: false
+      - name: Inspect real prerequisites without changing data or services
+        shell: bash
+        env:
+          PYTHONPATH: src
+          PYTHONDONTWRITEBYTECODE: '1'
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          for candidate in /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3; do
+            if [[ -x "$candidate" ]] && "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,12) else 1)'; then
+              "$candidate" -B scripts/m1_human_model_activation_readiness.py
+              exit 0
+            fi
+          done
+          exit 2

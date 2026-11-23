@@ -1,0 +1,26 @@
+name: Human-model M1 read-only volume inventory
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/human-model-m1-volume-inventory.yml'
+      - 'scripts/human_model_volume_inventory.py'
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Inspect external volume metadata (no writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/human_model_volume_inventory.py

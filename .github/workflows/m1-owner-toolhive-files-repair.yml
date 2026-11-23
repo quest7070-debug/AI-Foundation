@@ -1,0 +1,37 @@
+name: Foundation M1 owner ToolHive FILES one-shot repair
+
+# Exactly one owner-authored Issue. No Issue-derived command, path or model.
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: foundation-m1-owner-toolhive-files-repair
+  cancel-in-progress: false
+
+jobs:
+  one-shot:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      startsWith(github.event.issue.title, 'Foundation M1 ToolHive FILES Repair: ')
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 4
+    steps:
+      - name: Checkout trusted event-time main only
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Guard-verified one-shot of existing pinned FILES workload
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: src:.:scripts
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B scripts/m1_owner_toolhive_files_repair.py

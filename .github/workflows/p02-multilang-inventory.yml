@@ -1,0 +1,182 @@
+name: P02 multi-language code inventory
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/ai_foundation/infigraph_adapter.py"
+      - "src/ai_foundation/composite_code_intelligence.py"
+      - "src/ai_foundation/semantic_linker.py"
+      - "src/ai_foundation/libcst_adapter.py"
+      - "src/ai_foundation/infigraph_receipt.py"
+      - "src/ai_foundation/configuration_inventory.py"
+      - "src/ai_foundation/code_intelligence.py"
+      - "scripts/p02_inventory_probe.py"
+      - "tests/test_infigraph_adapter.py"
+      - "tests/test_composite_code_intelligence.py"
+      - "tests/test_semantic_linker.py"
+      - "tests/test_libcst_adapter.py"
+      - "tests/test_infigraph_receipt.py"
+      - "tests/test_p02_inventory_probe.py"
+      - "tests/test_storage_writer_inventory.py"
+      - "docs/LONG_TERM_STORAGE_INVENTORY.md"
+      - ".github/workflows/p02-multilang-inventory.yml"
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "src/ai_foundation/infigraph_adapter.py"
+      - "src/ai_foundation/composite_code_intelligence.py"
+      - "src/ai_foundation/semantic_linker.py"
+      - "src/ai_foundation/libcst_adapter.py"
+      - "docs/LONG_TERM_STORAGE_INVENTORY.md"
+      - "tests/test_storage_writer_inventory.py"
+      - "src/ai_foundation/infigraph_receipt.py"
+      - "src/ai_foundation/configuration_inventory.py"
+      - "src/ai_foundation/code_intelligence.py"
+      - "scripts/p02_inventory_probe.py"
+      - "tests/test_infigraph_adapter.py"
+      - "tests/test_composite_code_intelligence.py"
+      - "tests/test_semantic_linker.py"
+      - "tests/test_libcst_adapter.py"
+      - "tests/test_infigraph_receipt.py"
+      - "tests/test_p02_inventory_probe.py"
+      - ".github/workflows/p02-multilang-inventory.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p02-multilang-inventory-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inventory:
+    # Never execute fork-controlled PR code on the persistent M1 host.
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'quest7070-debug')
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 30
+    env:
+      INFIGRAPH_NO_WATCH: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: .foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set run-scoped uv cache and Infigraph registry
+        shell: bash
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/uv-cache-p02-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          registry="$RUNNER_TEMP/p02-infigraph-registry-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -m 700 -p "$cache" "$registry"
+          echo "UV_CACHE_DIR=$cache" >> "$GITHUB_ENV"
+          echo "INFIGRAPH_REGISTRY_HOME=$registry" >> "$GITHUB_ENV"
+
+      - name: Select canonical host Python
+        shell: bash
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          python="/opt/homebrew/bin/python3.12"
+          test -x "$python"
+          "$python" --version
+          echo "FOUNDATION_PYTHON=$python" >> "$GITHUB_ENV"
+
+      - name: Install pinned uv
+        shell: bash
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          version="0.8.22"
+          archive="uv-aarch64-apple-darwin.tar.gz"
+          expected="3f61099e261e449527141dbf125629fab33ad696468c8c90cebbac40185a306c"
+          url="https://github.com/astral-sh/uv/releases/download/${version}/${archive}"
+          mkdir -p "$RUNNER_TEMP/p02-uv"
+          curl --fail --location --silent --show-error "$url" -o "$RUNNER_TEMP/p02-uv/$archive"
+          actual="$(shasum -a 256 "$RUNNER_TEMP/p02-uv/$archive" | awk '{print $1}')"
+          test "$actual" = "$expected"
+          tar -xzf "$RUNNER_TEMP/p02-uv/$archive" -C "$RUNNER_TEMP/p02-uv"
+          uv="$(find "$RUNNER_TEMP/p02-uv" -type f -name uv -perm -u+x | head -n 1)"
+          test -n "$uv"
+          echo "UV_BIN=$uv" >> "$GITHUB_ENV"
+          "$uv" --version
+
+      - name: Sync locked development environment
+        shell: bash
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          "$UV_BIN" sync --frozen --extra dev --python "$FOUNDATION_PYTHON"
+
+      - name: Download and verify Infigraph 3.2.16
+        shell: bash
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          version="3.2.16"
+          archive="infigraph-aarch64-apple-darwin.tar.gz"
+          expected="86287f334d9dfd06c35e71202008e55f117adcb587709f550f6eb743cee97b15"
+          url="https://github.com/intuit/infigraph/releases/download/v${version}/${archive}"
+          mkdir -p "$RUNNER_TEMP/p02-infigraph"
+          curl --fail --location --silent --show-error "$url" -o "$RUNNER_TEMP/p02-infigraph/$archive"
+          actual="$(shasum -a 256 "$RUNNER_TEMP/p02-infigraph/$archive" | awk '{print $1}')"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::Infigraph checksum mismatch: $actual"
+            exit 1
+          fi
+          tar -xzf "$RUNNER_TEMP/p02-infigraph/$archive" -C "$RUNNER_TEMP/p02-infigraph"
+          binary="$(find "$RUNNER_TEMP/p02-infigraph" -type f -name infigraph -perm -u+x | head -n 1)"
+          test -n "$binary"
+          "$binary" --version
+          echo "INFIGRAPH_BIN=$binary" >> "$GITHUB_ENV"
+
+      - name: Run deterministic inventory regressions
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          .venv/bin/python -m pytest -q \
+            tests/test_infigraph_adapter.py \
+            tests/test_infigraph_receipt.py \
+            tests/test_composite_code_intelligence.py \
+            tests/test_semantic_linker.py \
+            tests/test_libcst_adapter.py \
+            tests/test_p02_inventory_probe.py
+
+      - name: Run real multi-language repository inventory
+        shell: bash
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          receipt_dir="$RUNNER_TEMP/p02-index-receipt-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -m 700 -p "$receipt_dir"
+          # Independent M1 evidence (runs 43231875509 / 43231893059) found
+          # exactly one newly-untracked path during Infigraph indexing.
+          # Its opaque path hash matches root tsconfig.json, which is absent
+          # from canonical main. Treat only this run-generated config as a
+          # non-source artifact; never ignore an owner-provided/tracked config.
+          # Git honors GIT_CONFIG_* in the adapter's subprocess; this changes
+          # no checked-in ignore rule, repository config, or persistent runner.
+          if [[ -e "$PWD/tsconfig.json" ||
+                -L "$PWD/tsconfig.json" ]] ||
+             git -C "$PWD" ls-files --error-unmatch -- tsconfig.json >/dev/null 2>&1; then
+            echo "::error::P02_GENERATED_TSCONFIG_PREEXISTS"
+            exit 2
+          fi
+          generated_ignore="$receipt_dir/derived-git-excludes"
+          printf '/tsconfig.json\n' > "$generated_ignore"
+          chmod 600 "$generated_ignore"
+          if [[ -n "${GIT_CONFIG_COUNT:-}" ]]; then
+            echo "::error::P02_GIT_CONFIG_OVERRIDES_UNEXPECTED"
+            exit 2
+          fi
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=core.excludesFile
+          export GIT_CONFIG_VALUE_0="$generated_ignore"
+          .venv/bin/python scripts/p02_inventory_probe.py \
+            --repo "$PWD" \
+            --infigraph-bin "$INFIGRAPH_BIN" \
+            --receipt "$receipt_dir/index.json" \
+            --summary "$GITHUB_STEP_SUMMARY"

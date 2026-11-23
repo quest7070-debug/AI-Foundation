@@ -1,0 +1,69 @@
+name: Human-model external ledger contract
+
+on:
+  push:
+    branches: [feat/human-model-ledger-ssd-isolated-20261031]
+    paths:
+      - "experiments/human_model/storage_location.py"
+      - "experiments/human_model/human_model_ledger.py"
+      - "experiments/human_model/test_external_ledger.py"
+      - ".github/workflows/human-model-external-ledger.yml"
+  workflow_dispatch:
+    inputs:
+      acceptance:
+        description: "Model-free disposable-runner acceptance mode"
+        required: true
+        default: ledger
+        type: choice
+        options:
+          - ledger
+          - two-runner
+
+permissions:
+  contents: read
+
+concurrency:
+  group: human-model-external-ledger-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  synthetic-mount:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.acceptance != 'two-runner' }}
+    # Draft acceptance route: this label must belong to a verified disposable
+    # runner. Never retarget to the shared runner to bypass the acceptance gate.
+    runs-on: [foundation-lease-disposable]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Leased validation and external ledger contract (no physical SSD)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: /usr/bin/python3 -B scripts/m1_external_ledger_job.py
+
+  lease-holder:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.acceptance == 'two-runner' }}
+    runs-on: [foundation-lease-disposable]
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Hold a private kernel lease through an inherited child
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: /usr/bin/python3 -B scripts/issue222_disposable_pair.py holder
+
+  lease-contender:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.acceptance == 'two-runner' }}
+    runs-on: [foundation-lease-disposable]
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Observe real cross-runner DEFER and re-admission after child exit
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: /usr/bin/python3 -B scripts/issue222_disposable_pair.py contender

@@ -1,0 +1,22 @@
+entity User;
+entity Target;
+action "read" appliesTo { principal: User, resource: Target };
+action "write" appliesTo { principal: User, resource: Target };
+action "delete" appliesTo { principal: User, resource: Target };
+action "send_email" appliesTo { principal: User, resource: Target };
+action "production_deploy" appliesTo { principal: User, resource: Target };
+action "purchase" appliesTo { principal: User, resource: Target };
+
+// Paseo host operations remain distinct Cedar actions.
+action "create" appliesTo { principal: User, resource: Target };
+action "resume" appliesTo { principal: User, resource: Target };
+action "import" appliesTo { principal: User, resource: Target };
+action "prompt" appliesTo { principal: User, resource: Target };
+action "steer" appliesTo { principal: User, resource: Target };
+action "out_of_band" appliesTo { principal: User, resource: Target };
+action "permission" appliesTo { principal: User, resource: Target };
+action "model" appliesTo { principal: User, resource: Target };
+action "mode" appliesTo { principal: User, resource: Target };
+action "provider_session" appliesTo { principal: User, resource: Target };
+action "turn" appliesTo { principal: User, resource: Target };
+action "helper" appliesTo { principal: User, resource: Target };

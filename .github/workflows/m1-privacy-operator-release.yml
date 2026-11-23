@@ -1,0 +1,40 @@
+name: Foundation M1 Operator privacy release
+
+# Explicit owner label only; normal commits, PR CI and issue text cannot deploy.
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: foundation-m1-privacy-operator-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.pull_request.number == 612 &&
+      github.event.pull_request.user.login == 'quest7070-debug' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/no-model-privacy-humanmodel-fastpath-20261110' &&
+      github.event.label.name == 'foundation-operator-privacy-61612'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable reviewed one-shot release handler
+        uses: actions/checkout@v5
+        with:
+          ref: e0036d80f4e2d9351523bcff8d87d4d841fd3c1d
+          persist-credentials: false
+      - name: Exact owner/Guard approval, stage, operator-only switch and rollback
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_HANDLER_SHA: e0036d80f4e2d9351523bcff8d87d4d841fd3c1d
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: /opt/homebrew/bin/python3.12 -B scripts/m1_privacy_operator_release.py

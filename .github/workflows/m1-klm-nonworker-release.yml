@@ -1,0 +1,42 @@
+name: Foundation M1 KLM nonworker parent admission release
+
+on:
+  push:
+    branches: [ops/klm-nonworker-release-20261110]
+    paths:
+      - '.github/workflows/m1-klm-nonworker-release.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-m1-klm-only-pinned-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.ref == 'refs/heads/ops/klm-nonworker-release-20261110' &&
+      github.event.head_commit.message == 'test(m1): apply pinned KLM non-worker parent release'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 7
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Run exact owner-approved KLM-only release with rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          /opt/homebrew/bin/python3 -B scripts/m1_klm_nonworker_release.py
+
+# Exact owner-approved one-shot request: Issue #587; source and rollback SHA fixed.

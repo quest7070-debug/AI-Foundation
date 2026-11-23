@@ -1,0 +1,33 @@
+name: Human-model external SSD provisioning
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Create new HumanModel directories on the single external USB volume'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate external USB mount; create directories only if explicitly requested
+        shell: bash
+        env:
+          APPLY: ${{ inputs.apply }}
+        run: |
+          set -euo pipefail
+          if [[ "$APPLY" == "true" ]]; then
+            /usr/bin/python3 -B scripts/human_model_ssd_provision.py --apply
+          else
+            /usr/bin/python3 -B scripts/human_model_ssd_provision.py
+          fi

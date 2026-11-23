@@ -1,0 +1,72 @@
+name: Foundation M1 KLM fairness exact release
+
+on:
+  push:
+    branches: [ops/klm-fairness-pinned-release-20261111]
+    paths:
+      - '.github/workflows/m1-klm-fairness-release.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-m1-klm-only-pinned-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # A normal push/PR never switches the installed service.
+    # Require both one explicit owner-reviewed PR #624 approval comment
+    # and a later exact owner push/event to the fixed operations branch.
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.ref == 'refs/heads/ops/klm-fairness-pinned-release-20261111' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.head_commit.message == 'test(m1): apply pinned KLM fairness release'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Pin and guard one KLM-only cutover; preserve rollback
+        id: cutover
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          # Lock the executable operator/readback code, not merely the target data SHA.
+          test "$(git hash-object scripts/m1_klm_fairness_release.py)" = "a3d828d23eec49251e5d1ee9016f0ba339031b9d"
+          test "$(git hash-object scripts/m1_klm_fairness_readback.py)" = "128305efc0a8b2447eee5af621a5f7224f67916b"
+          outcome=$(/opt/homebrew/bin/python3 -B scripts/m1_klm_fairness_release.py)
+          printf '%s\n' "$outcome"
+          if [[ "$outcome" == *"KLM fixed release: APPLIED"* ||
+                "$outcome" == *"KLM fixed release: ALREADY_INSTALLED"* ]]; then
+            # A prior release may have switched successfully even when its
+            # GitHub comment receipt was 403. Read back without a second switch.
+            echo 'readback_required=true' >> "$GITHUB_OUTPUT"
+          elif [[ "$outcome" == *"KLM_FAIRNESS_RELEASE=DEFERRED:"* ]]; then
+            echo 'readback_required=false' >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::No verified KLM release outcome"
+            exit 1
+          fi
+      - name: Independent service, pinned source, rollback and schedule readback
+        if: steps.cutover.outputs.readback_required == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3 -B scripts/m1_klm_fairness_readback.py
+
+# Exact review marker for owner comment on PR #624 is in
+# scripts/m1_klm_fairness_release.py. Not an approval by itself.
+
+# Owner-reviewed one-shot source: PR #624 exact fixed-SHA approval 6783828525.

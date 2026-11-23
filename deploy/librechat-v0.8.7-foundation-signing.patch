@@ -1,0 +1,66 @@
+--- a/index.cjs
++++ b/index.cjs
+@@ -29855,7 +29855,26 @@
+ 		constructAzureResponsesApi();
+ 	}
+ 	if (process.env.OPENAI_ORGANIZATION && !isAnthropic) configOptions.organization = process.env.OPENAI_ORGANIZATION;
+-	if (directEndpoint === true && configOptions?.baseURL != null) configOptions.fetch = createFetch({
++	if (endpoint === "Foundation" && options.foundationSigning) {
++		const signing = options.foundationSigning;
++		const baseFetch = directEndpoint === true && configOptions?.baseURL != null ? createFetch({ directEndpoint, reverseProxyUrl: configOptions.baseURL, ssrfAgents, redirect: shouldProtectUserBaseURL ? "error" : void 0 }) : (...args) => globalThis.fetch(...args);
++		configOptions.fetch = async (url, init = {}) => {
++			const body = typeof init.body === "string" ? Buffer.from(init.body) : Buffer.isBuffer(init.body) ? init.body : null;
++			if (!body) throw new Error("Foundation signing requires serialized request body");
++			const timestamp = Math.floor(Date.now() / 1000).toString();
++			const serialized = JSON.stringify(signing.ids);
++			const digest = node_crypto.default.createHash("sha256").update(body).digest("hex");
++			const msg = ["v2", signing.owner, serialized, signing.capability, signing.scope, signing.longRunning ? "1" : "0", timestamp, digest].join("\n");
++			const signature = node_crypto.default.createHmac("sha256", signing.secret).update(msg).digest("hex");
++			const headers = new Headers(init.headers ?? {});
++			headers.set("X-Foundation-Owner", signing.owner); headers.set("X-Foundation-Attachments", serialized); headers.set("X-Foundation-Capability", signing.capability);
++			if (signing.scope) headers.set("X-Foundation-Scope", signing.scope); if (signing.longRunning) headers.set("X-Foundation-Long-Running", "1");
++			headers.set("X-Foundation-Attachment-Timestamp", timestamp); headers.set("X-Foundation-Attachment-Signature", signature);
++			return baseFetch(url, { ...init, headers });
++		};
++	}
++
++	if (!(endpoint === "Foundation" && options.foundationSigning) && directEndpoint === true && configOptions?.baseURL != null) configOptions.fetch = createFetch({
+ 		directEndpoint,
+ 		reverseProxyUrl: configOptions?.baseURL,
+ 		ssrfAgents,
+@@ -30281,6 +30300,21 @@
+ 		endpointTokenConfig = await cache.get(tokenKey);
+ 	}
+ 	const customOptions = buildCustomOptions(endpointConfig, appConfig, endpointTokenConfig, !userProvidesURL);
++	if (endpoint === "Foundation" && !userProvidesURL) {
++		const secretFile = process.env.FOUNDATION_ATTACHMENT_SECRET_FILE ?? ""; let secret = "";
++		if (secretFile) try { secret = fs.default.readFileSync(secretFile, "utf8").trim(); } catch { secret = ""; }
++		const ids = Array.isArray(req.__foundationAuthorizedAttachments) ? req.__foundationAuthorizedAttachments.filter((id) => typeof id === "string" && id.length > 0) : [];
++		const intent = req.__foundationCapabilityIntent ?? {};
++		const allowedCapabilities = new Set(["CHAT", "SEARCH", "CODE", "DATA", "FILES", "VISION"]);
++		/* Auxiliary model calls (title generation, etc.) reuse the request object but must never inherit a primary request's elevated capability. */
++		const requestedModel = typeof model_parameters?.model === "string" ? model_parameters.model : "";
++		const auxiliary = intent.primaryModel && requestedModel && requestedModel !== intent.primaryModel;
++		const capability = auxiliary ? "CHAT" : (allowedCapabilities.has(intent.capability) ? intent.capability : "CHAT");
++		const scope = auxiliary ? "" : (typeof intent.scope === "string" && intent.scope.length <= 128 ? intent.scope : "");
++		if (secret && userId) customOptions.foundationSigning = { secret, owner: userId, ids: auxiliary ? [] : ids, capability, scope, longRunning: auxiliary ? false : intent.longRunning === true };
++	}
++
++
+ 	const clientOptions = {
+ 		reverseProxyUrl: baseURL ?? null,
+ 		baseURLIsUserProvided: userProvidesURL,
+@@ -31773,6 +31806,13 @@
+ 		tool_resources: agent.tool_resources,
+ 		requestFileSet: new Set(requestFiles?.map((file) => file.file_id))
+ 	});
++	/* Foundation authority is captured before getOptions builds the signing fetch. */
++	if (agent.endpoint === "Foundation") {
++		req.__foundationAuthorizedAttachments = (primedRequestAttachments ?? []).map((file) => file?.file_id).filter((id) => typeof id === "string" && id.length > 0);
++		const foundationModes = { "foundation-auto": ["CHAT", "daily-default"], "foundation-search": ["SEARCH", ""], "foundation-code": ["CODE", "repo-default"], "foundation-data": ["DATA", "json-summary"], "foundation-files": ["FILES", "files-default"], "foundation-vision": ["VISION", ""] };
++		const selectedMode = foundationModes[typeof agent.model === "string" ? agent.model : ""] ?? foundationModes["foundation-auto"];
++		req.__foundationCapabilityIntent = { capability: selectedMode[0], scope: selectedMode[1], longRunning: false, primaryModel: typeof agent.model === "string" ? agent.model : "foundation-auto" };
++	}
+ 	/**
+ 	* Pre-resolve manually-invoked + always-apply skill primes so their
+ 	* `allowed-tools` can be unioned into the agent's effective tool set

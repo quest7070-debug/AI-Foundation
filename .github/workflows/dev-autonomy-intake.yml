@@ -1,0 +1,387 @@
+name: Development autonomy intake
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled]
+    paths:
+      - "scripts/dev_autonomy_intake.py"
+      - "tests/test_dev_autonomy_intake.py"
+      - "scripts/local9b_real_issue_preflight.py"
+      - "tests/test_local9b_real_issue_preflight.py"
+      - "scripts/local9b_installed_layout_probe.py"
+      - "tests/test_local9b_installed_layout_probe.py"
+      - ".github/workflows/dev-autonomy-intake.yml"
+  push:
+    branches:
+      - "feat/github-autodev-intake-mvp-20261030"
+    paths:
+      - "scripts/dev_autonomy_intake.py"
+      - "tests/test_dev_autonomy_intake.py"
+      - "scripts/local9b_real_issue_preflight.py"
+      - "tests/test_local9b_real_issue_preflight.py"
+      - "scripts/local9b_installed_layout_probe.py"
+      - "tests/test_local9b_installed_layout_probe.py"
+      - ".github/workflows/dev-autonomy-intake.yml"
+  workflow_dispatch:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+  workflow_run:
+    workflows: ["Foundation CI"]
+    types: [completed]
+  schedule:
+    - cron: "0 22 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: development-autonomy-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  cancel-in-progress: false
+
+jobs:
+  intake-tests:
+    # Never execute fork-controlled PR code on the persistent M1.
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.user.login == 'quest7070-debug')
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Run deterministic intake and planner contract tests
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 -B -m unittest discover -s tests -p "test_dev_autonomy_intake.py" -v
+
+  m1-harness-parent-profile-preflight:
+    # Read-only actual M1 host assets + exact approved parent/source/test pins.
+    # Explicitly does not launch Ollama, invoke a model, or stage a plan.
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event_name == 'issue_comment' &&
+      github.event.action == 'created' &&
+      github.event.issue.number == 555 &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      github.event.comment.user.login == 'quest7070-debug' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.comment.body == 'foundation-harness-parent555-stage-once:v1'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Verify real owner parent #555 and existing local-only Harness assets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import socket
+          import stat
+          import sys
+
+          sys.path.insert(0, str(Path.cwd() / "scripts"))
+          from dev_autonomy_intake import GitHubAPI
+          from harness_decomposition_runtime import (
+              verify_host_baseline, verify_parent_scope, REPO)
+
+          cfg = {
+              "parent_issue": 555,
+              "base": "local9b/harness-two-source-red-20261110",
+              "base_sha": "b752bab66841ed0ee9f401bf12532132c003cb74",
+              "reviewed_contracts": {
+                  "src/ai_foundation/agent.py": {
+                      "test": "tests/test_local9b_harness_agent_output_boundary_20261110.py",
+                      "test_sha256": "31903380e59988dea0961f021ec58f9dc09cf36f6c6d5346bc44fcde67f5b144",
+                      "instruction": "Reject absent None model output, never silently stringify it. Preserve normal string replies.",
+                  },
+                  "src/ai_foundation/development_loop.py": {
+                      "test": "tests/test_local9b_harness_acceptance_evidence_20261110.py",
+                      "test_sha256": "2eaaf0e5dac387687780b1178301689a82bce0900fa1a259bb145197d4926288",
+                      "instruction": "If fixed test execution returns an empty acceptance result, do not publish Draft or report TESTED_CHANGE. Return TEST_ACCEPTANCE_UNVERIFIED, preserving valid passing delivery.",
+                  },
+              },
+          }
+          api = GitHubAPI(os.environ["GITHUB_TOKEN"], REPO)
+          contracts = verify_host_baseline(api, cfg)
+          approval = verify_parent_scope(api, cfg, contracts)
+          expected = sorted(cfg["reviewed_contracts"])
+          if approval["status"] != "PRE_MODEL_VERIFIED" or sorted(contracts) != expected:
+              raise SystemExit("HOST_PARENT_SCOPE_UNVERIFIED")
+
+          harness = Path("/Volumes/StorageVolume/home-data/deepseek-harness-standalone/handoff/harness9b-contract-20261106")
+          private = harness / "private-dsh-home-stage-20261106"
+          status = {"profile": "UNAVAILABLE", "dsh": "UNAVAILABLE",
+                    "seatbelt": "UNAVAILABLE", "budget_patch": "UNAVAILABLE"}
+          def owned_regular(path):
+              try:
+                  st = path.lstat()
+                  return (stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid()
+                          and not st.st_mode & 0o022)
+              except OSError:
+                  return False
+          def owned_dir(path):
+              try:
+                  st = path.lstat()
+                  return (stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid()
+                          and not st.st_mode & 0o022)
+              except OSError:
+                  return False
+
+          if owned_dir(private):
+              status["profile"] = "OWNER_PRIVATE_PRESENT"
+              try:
+                  sys.path.insert(0, str(harness / "experiments/harness9b"))
+                  from native_code_compare import (
+                      published_candidate, pinned_file, NATIVE_SEATBELT_NAME,
+                      NATIVE_SEATBELT_SHA)
+                  from native_fake_e2e import V6_PATCH_NAME, V6_PATCH_SHA256
+                  native, _ = published_candidate()
+                  pinned_file(private / NATIVE_SEATBELT_NAME, NATIVE_SEATBELT_SHA)
+                  pinned_file(private / V6_PATCH_NAME, V6_PATCH_SHA256)
+                  status["seatbelt"] = "PINNED"
+                  dsh = native / "runtime/node_modules/.bin/dsh"
+                  status["dsh"] = "EXISTING_EXECUTABLE" if dsh.exists() and os.access(dsh, os.X_OK) else "UNAVAILABLE"
+                  budget = private / "harness9b-autodev-16384-ctx32768.patch.yml"
+                  if owned_regular(budget) and budget.stat().st_size <= 262144:
+                      content = budget.read_bytes()
+                      if (b"qwen3.5:9b" in content and
+                              b"http://127.0.0.1:11436/v1" in content and
+                              b"maxTokens: 16384" in content):
+                          status["budget_patch"] = "LOCAL9B_BOUND"
+                      else:
+                          status["budget_patch"] = "UNREVIEWED_CONTENT"
+              except (ImportError, OSError, ValueError, TypeError):
+                  status["profile"] = "ASSETS_NOT_VERIFIED"
+
+          ports = {}
+          for port in (11434, 11436):
+              with socket.socket() as probe:
+                  probe.settimeout(0.3)
+                  ports[str(port)] = (probe.connect_ex(("127.0.0.1", port)) == 0)
+          print("HARNESS_REAL_PARENT_PROFILE_PREFLIGHT=" + json.dumps({
+              "parent_issue": 555,
+              "scope": approval["status"],
+              "fixed_sources": len(contracts),
+              "owner_assets": status,
+              "local_backend_ports_open": ports,
+              "model_invoked": False, "filesystem_modified": False,
+              "issue_mutation": False,
+          }, sort_keys=True))
+          PY
+
+  m1-harness-parent555-stage:
+    outputs:
+      plan_staged: ${{ steps.stage.outputs.plan_staged }}
+    # One-shot local qwen3.5:9b decomposition, not another scheduler.
+    # Wait <=10 min for real CI/compute availability (without eviction).
+    # Allow 15 min for actual inference after that bounded wait.
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event_name == 'issue_comment' &&
+      github.event.action == 'created' &&
+      github.event.issue.number == 555 &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      github.event.comment.user.login == 'quest7070-debug' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.comment.body == 'foundation-harness-parent555-stage-once:v1'
+    needs: [m1-harness-parent-profile-preflight]
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 32
+    permissions:
+      contents: read
+      issues: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Stage at most one real local9B Harness decomposition proposal
+        id: stage
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.sha }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover -s tests -p "test_m1_harness_parent555_stage.py" -q
+          # The Python stage emits an allowlisted BLOCKED receipt before exit 2.
+          # With set -e, plain command substitution discarded that diagnostic.
+          # Preserve the safe reason while retaining failure and NO child handoff.
+          receipt="$(python3 -B scripts/m1_harness_parent555_stage.py --stage-one)" || {
+            stage_exit=$?
+            printf '%s\n' "$receipt"
+            exit "$stage_exit"
+          }
+          printf '%s\n' "$receipt"
+          # Only the exact trusted stage status can enable the subsequent
+          # GitHub publication job. Deferred compute/CI or unknown results
+          # leave the already-approved parent untouched.
+          if [[ "$receipt" == *'"status": "PLAN_STAGED"'* ||
+                "$receipt" == *'"status": "ALREADY_STAGED"'* ]]; then
+            echo "plan_staged=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  m1-harness-parent555-child-once:
+    # Reuse the pinned immutable plan. At most one unapproved Issue is
+    # created, then one dependency-free child may inherit exact ready scope
+    # from the already approved parent. No additional model turn.
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.event_name == 'issue_comment' &&
+      github.event.action == 'created' &&
+      github.event.issue.number == 555 &&
+      github.event.issue.user.login == 'quest7070-debug' &&
+      github.event.comment.user.login == 'quest7070-debug' &&
+      github.actor == 'quest7070-debug' &&
+      github.event.comment.body == 'foundation-harness-parent555-stage-once:v1' &&
+      needs.m1-harness-parent555-stage.outputs.plan_staged == 'true'
+    needs: [m1-harness-parent555-stage]
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Publish and re-admit at most one pinned dependency-free child
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.sha }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          python3 -B scripts/m1_harness_parent555_stage.py --publish-and-admit-one
+
+  m1-worker-layout-diagnosis:
+    # No model process, directory creation or installed code import.
+    # This is a narrow read-only layout observation from fixed LaunchAgent.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'quest7070-debug'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 4
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Verify P4 owner state and installed source layout (no model)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python3 -B scripts/local9b_installed_layout_probe.py
+          python3 -B - <<'PY'
+          import json
+          from scripts.m1_runtime_status_probe import runtime_status, source_status
+          current = runtime_status()["autodev"]
+          files = source_status()["files"]
+          required = ("development_host", "development_loop", "compute_lease")
+          observed = {key: files[key]["state"] for key in required}
+          print("M1_P4_CORRECTED_RUNTIME=" + json.dumps({
+              "autodev": current, "source_states": observed,
+              "model_invoked": False, "queue_modified": False,
+          }, ensure_ascii=False, sort_keys=True))
+          if (current.get("state") == "UNAVAILABLE"
+                  or any(state != "OBSERVED" for state in observed.values())):
+              raise SystemExit("M1_P4_OWNER_STATE_READBACK_UNVERIFIED")
+          PY
+
+  m1-approved-issue-preflight:
+    # Read-only current M1 9B Issue backlog: no model or GitHub writes.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'quest7070-debug'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 4
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Verify previously consumed 9B Issues are quarantined (no inference)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python3 -B scripts/local9b_real_issue_preflight.py \
+            --expect-held 266 --expect-held 270 --expect-held 271
+
+  daily-intake:
+    if: >-
+      github.repository == 'quest7070-dev/AI-Foundation' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' ||
+       github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'issues' &&
+        github.event.action == 'labeled' &&
+        github.event.label.name == 'foundation-autodev:ready') ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'failure'))
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Collect GitHub signals and render deterministic triage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          # Optional host-reviewed Harness role binding (no model/API keys).
+          FOUNDATION_HARNESS_TRIAGE_CONFIG_JSON: ${{ vars.FOUNDATION_HARNESS_TRIAGE_CONFIG_JSON }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/dev_autonomy_intake.py \
+            --planner auto \
+            --output-dir "dev-autonomy-report" \
+            --report-issue 7 \
+            --publish-comment \
+            --publish-ci-task-drafts
+      - name: Publish bounded report artifact
+        # GitHub artifact storage can be quota-exhausted. The bounded issue
+        # report is already published above; storage failure must not turn
+        # a completed local intake into a failed development signal.
+        continue-on-error: true
+        uses: actions/upload-artifact@v6
+        with:
+          name: development-autonomy-intake-${{ github.run_id }}
+          path: |
+            dev-autonomy-report/report.json
+            dev-autonomy-report/report.md
+          if-no-files-found: error
+          retention-days: 7

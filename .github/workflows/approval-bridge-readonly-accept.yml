@@ -1,0 +1,300 @@
+name: Approval and M1 bridge read-only acceptance
+
+on:
+  pull_request:
+    paths:
+      - "scripts/foundation_mcp_stdio.py"
+      - "scripts/m1_p4_mcp_stdio_e2e.py"
+      - "scripts/m1_approval_scoped_host_canary.py"
+      - "scripts/m1_approval_scoped_stdio_e2e.py"
+      - "scripts/m1_owner_grant_host_canary.py"
+      - "scripts/m1_owner_grant_stdio_e2e.py"
+      - "scripts/m1_owner_delegated_mcp_stdio.py"
+      - "scripts/m1_p4_release_inventory.py"
+      - "scripts/m1_operator_release_stage.py"
+      - "scripts/m1_operator_release_host.py"
+      - "tests/test_m1_operator_release_host.py"
+      - "tests/test_m1_operator_release_stage.py"
+      - "src/ai_foundation/operator_release_transaction.py"
+      - "tests/test_operator_release_transaction.py"
+      - "tests/test_m1_p4_release_inventory.py"
+      - "src/ai_foundation/mcp_owner_grants.py"
+      - "tests/test_mcp_owner_grants.py"
+      - "src/ai_foundation/operator_server.py"
+      - "src/ai_foundation/human_renderer.py"
+      - "scripts/operator_server.py"
+      - "src/ai_foundation/operator_mcp_tools.py"
+      - "src/ai_foundation/mcp_host.py"
+      - "scripts/m1_operator_status_probe.py"
+      - "src/ai_foundation/primary_review_events.py"
+      - "src/ai_foundation/notification_boundary.py"
+      - "tests/test_foundation_mcp_stdio.py"
+      - "tests/test_primary_review_events.py"
+      - "tests/test_m1_operator_status_probe.py"
+      - ".github/workflows/approval-bridge-readonly-accept.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-m1:
+    # Never run fork-authored code on the persistent owner M1.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'quest7070-debug'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: .foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          persist-credentials: false
+      - name: Validate deterministic bridge source contracts
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: "src"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -m unittest discover -s tests -p "test_m1_operator_status_probe.py" -q
+          /usr/bin/python3 -B -m unittest discover -s tests -p "test_m1_runtime_status_probe.py" -q
+          # The M1 owner runner deliberately has no pytest package.
+          # The hosted Foundation CI runs the exhaustive pytest fixtures.
+          /opt/homebrew/bin/python3.12 -B -c '
+          import tempfile, pathlib, plistlib
+          from ai_foundation.operator_release_transaction import OperatorOnlyCutover, ReleaseDenied
+          from ai_foundation.release_gate import ImmutableReleaseScope
+          from scripts.m1_operator_release_host import candidate_operator_plist, OperatorHostDenied, LABEL
+          scope=ImmutableReleaseScope(
+              path="m1-operator",source_sha="a"*64,
+              previous_authority="p",previous_endpoint="p",
+              candidate_authority="c",candidate_endpoint="c",
+              rollback_procedure="restore",switch_target="operator",
+              readback_target="new",rollback_readback_target="old")
+          class Host:
+              def current_scope_ref(self):raise AssertionError("NO_HOST_EFFECT_ALLOWED")
+          try:
+              OperatorOnlyCutover(None,Host()).execute(scope,"fixture-run","0"*64)
+          except ReleaseDenied as error:
+              assert str(error)=="TRUSTED_OWNER_RELEASE_GATE_UNAVAILABLE"
+          else:raise AssertionError("OWNER_GATE_BYPASS")
+          with tempfile.TemporaryDirectory(prefix="m1-operator-fixture-") as temp:
+              root=pathlib.Path(temp);new=root/"scripts/operator_server.py"
+              new.parent.mkdir();new.write_text("synthetic fixture, not executable")
+              old=root/"old_operator.py"
+              plist=plistlib.dumps({"Label":LABEL,"ProgramArguments":[
+                  "/usr/bin/python3","-B",str(old),
+                  "--config",str(root/"existing.json"),"--port","8766"]})
+              output,entry=candidate_operator_plist(plist,old,root)
+              assert entry==str(new)
+              assert plistlib.loads(output)["ProgramArguments"][-2:]==["--port","8766"]
+              try:
+                  candidate_operator_plist(plistlib.dumps({"Label":LABEL,"ProgramArguments":[
+                      "/bin/bash",str(old),"--config",str(root/"existing.json")]}),old,root)
+              except OperatorHostDenied:pass
+              else:raise AssertionError("SHELL_INTERPRETER_BYPASS")
+          print("M1_RELEASE_OFFLINE_CANARY=PASS_ZERO_PRODUCTION_EFFECTS")
+          '
+      - name: Inspect fixed installed Operator launcher compatibility (no effects)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: "src"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B -c '
+          import json,tempfile,pathlib
+          from scripts.m1_p4_release_inventory import LABELS,_owned_regular_bytes,_source_from_plist
+          from scripts.m1_operator_release_host import candidate_operator_plist,OperatorHostDenied
+          label=LABELS[0][1]
+          path=pathlib.Path.home()/"Library/LaunchAgents"/(label+".plist")
+          row={"candidate_launcher_compatible":False,"status":"BLOCKED","effects":0}
+          try:
+              plist=_owned_regular_bytes(path,max_bytes=32768)
+              old=_source_from_plist(plist,label,"operator")
+              with tempfile.TemporaryDirectory(prefix="operator-compat-only-") as folder:
+                  checkout=pathlib.Path(folder)
+                  (checkout/"scripts").mkdir()
+                  (checkout/"scripts/operator_server.py").write_text("not executable fixture")
+                  candidate_operator_plist(plist,old,checkout)
+              row.update(candidate_launcher_compatible=True,status="COMPATIBLE")
+          except (OSError,ValueError,KeyError,TypeError,OperatorHostDenied):
+              row["status"]="REVIEW_REQUIRED"
+          print("M1_OPERATOR_LAUNCHER_COMPAT="+json.dumps(row,sort_keys=True))
+          '
+      - name: Real installed Operator, external owner-local read-only MCP
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: "src"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B scripts/m1_p4_mcp_stdio_e2e.py
+      - name: Verify actual M1 Operator approval aggregate through Bridge source
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: "src"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -c '
+          import json
+          from scripts.m1_operator_status_probe import operator_status
+          row = operator_status()
+          counts = row.get("approval") if row.get("state") == "OBSERVED" else None
+          expected = {
+              "current_guard_requests", "primary_review_started",
+              "primary_review_resolved", "owner_escalation_waiting",
+          }
+          if (type(counts) is not dict or set(counts) != expected
+                  or any(type(v) is not int or v < 0 for v in counts.values())):
+              print("M1_APPROVAL_AGGREGATE=NOT_VERIFIED")
+              raise SystemExit(1)
+          # Exact identifiers and source content never leave the M1 host.
+          failed = row["notices"].get("failed_kind_counts")
+          allowed_kinds = {"work", "effect", "approval", "system", "UNKNOWN"}
+          if (type(failed) is not dict or not set(failed) <= allowed_kinds
+                  or any(type(v) is not int or v < 0 for v in failed.values())):
+              print("M1_APPROVAL_AGGREGATE=INVALID_FAILED_KIND_SUMMARY")
+              raise SystemExit(1)
+          print("M1_APPROVAL_AGGREGATE=" + json.dumps(
+              {"status": "OBSERVED", "counts": counts,
+               "failed_kind_counts": failed,
+               "runtime_wiring": row.get("runtime_wiring")}, sort_keys=True))
+          '
+      - name: Verify actual P4 worker state root through current bridge source
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: "src"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -c '
+          import json
+          from scripts.m1_runtime_status_probe import runtime_status
+          row = runtime_status()
+          worker = row.get("autodev") or {}
+          if worker.get("state") == "UNAVAILABLE" or "state" not in worker:
+              print("M1_P4_WORKER_ROOT=UNVERIFIED:" + str(worker.get("reason", "UNKNOWN")))
+              raise SystemExit(1)
+          print("M1_P4_WORKER_ROOT=" + json.dumps(
+              {"state": worker["state"], "result_counts": worker.get("result_counts", {})},
+              sort_keys=True))
+          '
+      - name: Synthetic owner-delegated MCP Guard + LV2/LV4 cross-process canary
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: "src"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B scripts/m1_approval_scoped_stdio_e2e.py
+      - name: Isolated M1 MCP Guard one-shot fixture (no owner UI issuer)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: "src"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B scripts/m1_owner_grant_stdio_e2e.py
+      - name: Independently identify blocked release inventory stage without host mutation
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: "src"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -c '
+          import json
+          from scripts.m1_p4_release_inventory import release_inventory
+          row=release_inventory()
+          report={"status":row.get("status","UNAVAILABLE"),
+                  "reason":row.get("reason"),
+                  "failed_stage":row.get("failed_stage"),
+                  "operator_binding_shape":row.get("operator_binding_shape"),
+                  "release_permitted":row.get("release_permitted",False)}
+          print("M1_RELEASE_PREFLIGHT=" + json.dumps(report,sort_keys=True))
+          if report["release_permitted"] is not False:
+              raise SystemExit("INVALID_EFFECT_AUTHORITY")
+          '
+      - name: Read-only Operator-only Guard release contract (no approval or release)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: "src"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /opt/homebrew/bin/python3.12 -B -c '
+          import json
+          from scripts.m1_p4_release_inventory import operator_only_release_scope
+          scope, report = operator_only_release_scope()
+          selected = {
+              "status": report.get("status"),
+              "stage": report.get("stage"),
+              "operator_only": report.get("operator_only"),
+              "release_scope_ref": report.get("scope_ref"),
+              "release_permitted": report.get("release_permitted"),
+              "guard_mutations": report.get("guard_mutations"),
+              "service_mutations": report.get("service_mutations"),
+              "native_dispatches": report.get("native_dispatches"),
+          }
+          print("M1_OPERATOR_ONLY_SCOPE="+json.dumps(selected,sort_keys=True))
+          if (selected["release_permitted"] is not False
+                  or selected["guard_mutations"] != 0
+                  or selected["service_mutations"] != 0
+                  or selected["native_dispatches"] != 0):
+              raise SystemExit("INVALID_RELEASE_AUTHORITY")
+          '
+      - name: Diagnose installed owner binding metadata (bounded, no view read)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: "src"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -c '
+          import json, shutil
+          from pathlib import Path
+          from scripts import m1_human_model_activation_readiness as m
+          report={"status":"UNAVAILABLE","installed_operator_config_identified":False,
+                  "existing_binding_config":None,"owner_binding_present":None,
+                  "binding_count":None,"view_source_read":False}
+          try:
+              installed=m.installed_paths()
+              if installed is not None:
+                  data=Path(installed[1])
+                  report["installed_operator_config_identified"]=True
+                  binding_path=data/"human-model-bindings.json"
+                  report["existing_binding_config"]=binding_path.is_file()
+                  if binding_path.is_file():
+                      from ai_foundation.human_model_context import load_bindings
+                      bindings=load_bindings(binding_path)
+                      report["binding_count"]=len(bindings)
+                      docker=shutil.which("docker") or "/opt/homebrew/bin/docker"
+                      owner_record=m._owner_record(docker)
+                      if owner_record.get("count")==1:
+                          report["owner_binding_present"]=owner_record.get("owner") in bindings
+                  report["status"]="OBSERVED"
+          except Exception:
+              report["status"]="UNAVAILABLE"
+          print("M1_HUMANMODEL_BINDING_METADATA="+json.dumps(report,sort_keys=True))
+          '
+      - name: Identify installed HumanModel loader via bounded source structure only
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: "src"
+        working-directory: ${{ github.workspace }}/.foundation-ci/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -c '
+          import json
+          from scripts.m1_human_model_activation_readiness import inspect_installed_runtime
+          row=inspect_installed_runtime()
+          print("M1_HUMANMODEL_LOADER_SOURCE="+json.dumps({
+            "operator_source_identified":row.get("operator_source_identified"),
+            "installed_context_code":row.get("installed_context_code"),
+            "installed_binding_loader":row.get("installed_binding_loader"),
+            "loader_source_kind":row.get("loader_source_kind"),
+            "existing_binding_config":row.get("existing_binding_config"),
+            "loaded_process_verified":row.get("loaded_process_verified")},sort_keys=True))
+          '
